@@ -1,112 +1,173 @@
 # flow-engine
 
-Graph-based agent flows for solo development and consulting work, built on **LangGraph.js**, **OpenRouter** and **Jev**.
+flow-engine runs software work as graphs of small steps. It uses LangGraph.js for orchestration, OpenRouter for models and Jev for judges. You approve intent (scope, architecture, risky plans) and outcomes (merges). The graph runs everything in between, puts a judge or plain code in front of every branch and logs every step.
 
-The goal is to stay in the loop without watching the details. You approve *intent* (scope, architecture, risky plans) and *outcomes* (merges). Everything in between runs as a graph, with judges on the edges and a paper trail on every node.
+It has three flows:
 
 ```
 ┌────────────────────┐   PRD, ADRs,        ┌────────────────────┐
 │ planning           │── tasks.yaml ──────►│ delivery           │  one task at a time
 │ rare, human-heavy  │                     │ mostly autonomous  │
 └────────────────────┘                     │   ┌────────────┐   │
-          ▲  replan proposals              │   │ review     │◄──┼── also standalone,
-          └────────────────────────────────┤   │ (subgraph) │   │   on any diff/PR
+          ▲  replan proposals (not built)  │   │ review     │◄──┼── also standalone,
+          └────────────────────────────────┤   │ (subgraph) │   │   on any diff or PR
                                            │   └────────────┘   │
                                            └────────────────────┘
 ```
 
+| Flow | Input | Output | Status |
+|---|---|---|---|
+| [review](packages/review/README.md) | A diff, and optionally a task | A verdict (`pass`, `fix` or `escalate`) and a one-screen report | Ready for real use |
+| [delivery](packages/delivery/README.md) | One task from `plan/tasks.yaml` | Code on branch `flows/<task>`, reviewed and approved by you | Ready to try with Claude Code as the agent |
+| [planning](packages/planning/README.md) | A client brief | A PRD, ADRs and `plan/tasks.yaml` | Runs end to end; the prompts are first drafts |
+
+## Requirements
+
+- Node.js 20.12 or later. The CLI loads `.env` with `process.loadEnvFile`, which arrived in 20.12.
+- pnpm 9. Run `corepack enable` if you don't have it.
+- git.
+- For live runs, an [OpenRouter](https://openrouter.ai) key. A [TypeSafe](https://console.typesafe.ai) key for Jev is optional.
+- For delivery with a real agent, the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI, signed in, on your `PATH`.
+
 ## Quick start
 
+Run the full offline check. It needs no keys:
+
 ```bash
-bash scripts/verify.sh     # install, typecheck, tests, all sample flows → runs/verify.log
+bash scripts/verify.sh
 ```
 
-Or step by step:
+The script installs dependencies, type-checks, runs the unit tests and runs all three sample flows against mocks. It writes everything to `runs/verify.log`. Every step ends in `exit 0` except review, which ends in `exit 2` because the sample diff is bad on purpose.
+
+To run the steps one at a time:
 
 ```bash
-corepack enable            # provides pnpm, if you don't have it
 pnpm install
-pnpm test                  # unit tests for nodes and routing
-
-# Everything runs offline with deterministic mocks, no keys needed:
-pnpm review:sample         # review a sample diff with 5 specialist reviewers
-pnpm deliver:sample --yes  # plan → risk → implement → checks → review loop → stop rule
-pnpm plan:sample --yes     # brief → questions → scope → 3 architectures → ADRs → tasks
+pnpm test                  # unit tests for nodes, routing and the worktree helpers
+pnpm review:sample         # review a sample diff with five specialist reviewers
+pnpm deliver:sample --yes  # plan, risk, implement, checks, review loop, stop rule
+pnpm plan:sample --yes     # brief, questions, scope, three architectures, ADRs, tasks
 ```
 
-Omit `--yes` and each human gate prompts you in the terminal instead. `flows review` exits with code 2 when the verdict isn't `pass` (the sample diff is deliberately bad), so it can gate CI. Run outputs go to `runs/<project>/<runId>/`, which is git-ignored and never written into the project repo.
+Without `--yes`, each human gate asks you in the terminal. The mocks are test doubles, not reviewers. They exist so you can watch every node and edge run.
 
-To run for real, copy `.env.example` to `.env`, add your `OPENROUTER_API_KEY` (and `TYPESAFE_API_KEY` for Jev), and drop `--offline`:
+## Use it on your own project
 
-```bash
-pnpm flows review --repo ~/Coding/some-project --base main --head my-branch
-pnpm flows review --repo ~/Coding/client-x --artifacts ~/Coding/workspaces/client-x --task T-004
-pnpm flows tasks  --repo ~/Coding/some-project --done T-001,T-002   # what's ready next
-```
+1. Copy the env file and add your OpenRouter key:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Add a shell alias, so you can run `flows` from any project folder:
+
+   ```bash
+   alias flows='pnpm --silent --dir /path/to/flow-engine flows'
+   ```
+
+   The CLI resolves relative paths against the folder you run it from, so `--repo .` works.
+
+3. From your project folder, review your branch:
+
+   ```bash
+   flows review --repo . --base main --head my-branch
+   ```
+
+   The review covers commits on `my-branch` that aren't on `main`. To review work you haven't committed, write it to a diff file first. `git diff` leaves out files git doesn't track yet, so `git add -N .` marks them first:
+
+   ```bash
+   git add -N .
+   git diff main > /tmp/wip.diff
+   flows review --repo . --diff-file /tmp/wip.diff
+   ```
+
+`flows review` exits with code 2 when the verdict isn't `pass`, so it can gate CI. Each run writes its report to `runs/<project>/<run id>/` in this repo. That folder is git-ignored, and the flows never write run output into your project.
+
+[docs/wiring.md](docs/wiring.md) walks through the rest in order: CI, the coding agent, gates away from the terminal and closing the loop. [docs/configuration.md](docs/configuration.md) lists every `.flows.yaml` setting.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `flows review --repo <dir> [--base main --head HEAD \| --diff-file <f>] [--task <id>]` | Reviews a diff. With `--task`, the spec reviewer checks the diff against that task's acceptance criteria. |
+| `flows deliver --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Takes one task from plan to merge gate. `delivery.agent` in `.flows.yaml` picks who writes the code. |
+| `flows plan --repo <dir> --brief <file> [--write]` | Turns a brief into a PRD, ADRs and tasks. Writes a proposal under `runs/` unless you pass `--write`. |
+| `flows tasks --repo <dir> [--done T-001,T-002]` | Prints the task list and marks which tasks are ready to start. Needs no keys. |
+
+Every command also takes these options:
+
+- `--artifacts <dir>` reads `.flows.yaml`, `docs/` and `plan/` from a separate workspace. Use it for client repos that shouldn't carry your files.
+- `--offline` swaps every model and judge for mocks. Setting `FLOWS_OFFLINE=1` does the same.
+- `--yes` accepts the first option at every gate.
+
+> **Warning:** `flows plan --write` writes `docs/prd.md`, `docs/adr/*.md` and `plan/tasks.yaml` straight into the artifacts folder and replaces files with the same names. Run without `--write` first and read the proposal.
 
 ## Layout
 
 ```
 packages/
-  core/        contracts (PlannedTask, Finding…), config, OpenRouter client,
-               judges (Jev / LLM / mock), artifact I/O, prompts, gate types
-  review/      ✅ complete — fan-out specialists → dedupe → judge triage → verdict → digest
-  delivery/    🧩 wired end to end; `implement` is a stub for your coding agent
-  planning/    🧩 wired end to end; prompts are first drafts
-  cli/         `flows <review|deliver|plan|tasks>` + the gate driver
-prompts/       one markdown file per generative node, versioned
-examples/      sample-project: ADR, tasks.yaml, .flows.yaml, a deliberately bad diff
-runs/          per-run outputs (git-ignored)
+  core/       shared contracts, config, OpenRouter client, judges, artifact I/O, prompts, gate types
+  review/     specialist reviewers, dedupe, judge triage, verdict, report
+  delivery/   plan, risk, implement, checks, review subgraph, gates
+  planning/   discovery, scope, architecture options, ADRs, tasks, coverage check
+  cli/        the flows command and the terminal gate driver
+prompts/      one markdown prompt per generative node
+examples/     sample-project: config, ADR, tasks and a diff that is bad on purpose
+docs/         wiring guide and configuration reference
+scripts/      verify.sh
+runs/         run output, git-ignored
 ```
 
-Each flow package has the same four files, and that's the pattern to copy for new flows:
+Each package has its own README: [core](packages/core/README.md), [review](packages/review/README.md), [delivery](packages/delivery/README.md), [planning](packages/planning/README.md) and [cli](packages/cli/README.md). [prompts](prompts/README.md) and [the sample project](examples/sample-project/README.md) have one too.
+
+Each flow package has the same four source files. Copy the pattern when you add a flow:
 
 | File | What goes in it |
 |---|---|
-| `state.ts` | Plain TypeScript types for the state. No framework imports. |
-| `nodes.ts` | `(state) => Partial<state>` functions and routing functions. Testable without a graph. |
-| `graph.ts` | The LangGraph `Annotation` (the state plus reducers) and the wiring. The diagram lives in the header comment. |
-| `mocks.ts` | Offline responders, so every node and edge runs with no network. |
+| `state.ts` | Plain TypeScript types for the state, with no framework imports. |
+| `nodes.ts` | Node functions that take state and return a partial update, plus the routing functions. You can test them without building a graph. |
+| `graph.ts` | The LangGraph `Annotation` (the state plus its reducers) and the wiring. The header comment holds the diagram. |
+| `mocks.ts` | Offline responses, so every node and edge runs with no network. |
 
 ## How to design a flow
 
-These are the five things every graph framework asks you to define.
+Every graph framework asks you to define the same five things.
 
-1. **State.** Write the type first. Include the input, the artifacts (by reference plus a short summary), loop counters, gate decisions and a provenance log. If you can't write the state, you don't understand the flow yet.
-2. **Nodes.** Classify each one before writing it:
-   - *deterministic* (plain code: git, tests, file I/O, policy)
-   - *generative* (OpenRouter: creates text or code)
-   - *judge* (Jev: a typed decision such as yes/no, one-of-N or a score)
-   - *human* (`interrupt()`)
-
-   Push as much as possible into deterministic nodes.
+1. **State.** Write the type first. Include the input, the artifacts (a path plus a short summary), loop counters, gate decisions and a log. If you can't write the state, you don't understand the flow yet.
+2. **Nodes.** Give each node one of four kinds before you write it, and push as much work as you can into the first kind:
+   - Deterministic: plain code such as git, tests, file I/O and policy.
+   - Generative: an OpenRouter call that writes text or code.
+   - Judge: a Jev call that returns a typed decision, such as yes or no, one of N or a score.
+   - Human: a gate, built on `interrupt()`.
 3. **Edges.** There are four kinds:
-   - static: A → B
-   - conditional: a function of state
-   - fan-out: `Send`, one per parallel branch, merged by a reducer
-   - loops: always with a stop rule
+   - Static: A always leads to B.
+   - Conditional: a function of state picks the next node.
+   - Fan-out: `Send` starts one branch per item, and a reducer merges what they return.
+   - Loop: always with a stop rule.
 
-   Put a judge (or plain policy code) in front of every conditional edge.
-4. **Gates.** Gate at the *ends* (intent and outcome), not in the middle. Escalate by risk: low risk with high confidence proceeds, anything else pauses. Keep every gate summary to one screen.
-5. **Context policy.** Each node gets a *view*, not the whole state (see `review/src/reviewers.ts`). Pass big things by path. Summarize at boundaries. The checker uses a different model or context from the maker.
+   Put a judge or plain policy code in front of every conditional edge.
+4. **Gates.** Gate at the ends (intent and outcome), not in the middle. Let risk decide: low risk with high confidence goes ahead, and anything else waits for you. Keep every gate summary to one screen.
+5. **Context.** Give each node a view of the state, not all of it. `packages/review/src/reviewers.ts` shows how. Pass large things by path, and summarise at boundaries. The model that checks the work should differ from the model that made it.
 
-Two LangGraph-specific rules that bite:
+Three LangGraph rules have already caused bugs here:
 
-- **Parallel writes need reducers.** Any field written by fan-out branches needs a `concat` reducer (`rawFindings`, `options`, `log`). Never *return* such a field from a later node unless you mean to append to it.
-- **Resumed nodes re-run from the top.** After `interrupt()`, the node runs again from its first line. Keep model calls in the node *before* the gate, not in the gate node itself.
+- **Parallel writes need reducers.** Any field that fan-out branches write needs a `concat` reducer, as `rawFindings`, `options` and `log` have. Don't return such a field from a later node unless you mean to append to it.
+- **A resumed node runs again from its first line.** After `interrupt()`, LangGraph re-runs the whole node. Keep model calls in the node before the gate, not in the gate node.
+- **A node can't share a name with a state key.** LangGraph refuses to build the graph. That is why the review node that writes `report` is called `writeReport`.
 
 ## Where the tools fit
 
-| Layer | Tool | Where |
+| Layer | Tool | Code |
 |---|---|---|
-| Generative nodes | OpenRouter (`models.*` per role in `.flows.yaml`; `openrouter.provider` enforces a client's data policy) | `core/src/models.ts` |
-| Judge nodes | Jev: `noul`, `choice` and `score` over shared state, many questions in one call. Falls back to an LLM judge with the same interface. | `core/src/judge.ts` |
-| Orchestration | LangGraph.js: `StateGraph`, `Send`, `interrupt`, checkpointer | `*/src/graph.ts` |
-| Knowledge | ADRs and `tasks.yaml` today (a Backstage-style catalog or a graph DB later) | `core/src/artifacts.ts` |
+| Generative nodes | OpenRouter. `.flows.yaml` sets a model per role, and `openrouter.provider` enforces a client's data policy. | `packages/core/src/models.ts` |
+| Judge nodes | Jev asks `noul` (yes or no), `choice` and `score` questions over one piece of state, several in one call. Without a Jev key, an LLM judge with the same interface takes over. | `packages/core/src/judge.ts` |
+| Coding agent | Claude Code, headless, in one git worktree per task. | `packages/delivery/src/agents/claude-code.ts` |
+| Orchestration | LangGraph.js: `StateGraph`, `Send`, `interrupt` and a checkpointer. | `packages/*/src/graph.ts` |
+| Knowledge | ADRs and `tasks.yaml`. | `packages/core/src/artifacts.ts` |
 
-## Project repos vs this repo
+## Project repos and client repos
 
-This repo is the engine and is your IP. Projects keep only their artifacts:
+This repo is the engine. A project keeps only its artifacts:
 
 ```
 some-project/
@@ -116,22 +177,21 @@ some-project/
   plan/tasks.yaml
 ```
 
-For client repos that shouldn't carry these files, keep them in a shadow workspace you own and pass `--artifacts <dir>`. Check each client's AI policy before sending their code to any model.
+For a client repo that shouldn't carry these files, keep them in a workspace folder you own and pass `--artifacts <dir>`. Check the client's AI policy before you send their code to any model.
+
+## Known limits
+
+- Gates only wait while the CLI process runs. The graphs use an in-memory checkpointer, so a run that stops at a gate can't be resumed later. [docs/wiring.md](docs/wiring.md#4-persistent-runs-and-gates-away-from-the-terminal) describes the fix.
+- Approving a merge records the decision. It doesn't push the branch or open a PR.
+- The Jev client follows the REST shape in TypeSafe's launch docs (`POST /v1/systemone`), and nobody has checked it against the live API yet. If calls fail, compare it with the current API reference. Only `JevJudge` needs to change.
+- There is no eval set yet, so you can't yet measure whether a prompt change helped.
 
 ## Next steps
 
-Step-by-step wiring (keys, CI, coding agent, remote gates) is in [docs/wiring.md](docs/wiring.md).
-
-
-- [ ] Run `pnpm review:sample`, then point `flows review` at a real branch of your own.
-- [ ] Plug a coding agent into `delivery/src/nodes.ts → implement` (Claude Code headless in a git worktree is the natural first choice).
-- [ ] Swap `MemorySaver` for `@langchain/langgraph-checkpoint-sqlite` so gates can wait across restarts, then drive gates from somewhere other than the terminal.
-- [ ] Add Langfuse tracing (`@langfuse/langchain` callback handler passed in the invoke config) and compare judge cost: Jev vs LLM.
-- [ ] Add a golden-diff eval set under `evals/` for the review flow before tuning prompts.
-- [ ] Let delivery write a *replan proposal* artifact when a task contradicts the plan, and have planning resume from `breakdown`.
-
-## Notes
-
-- Model slugs in the config are placeholders. Check [openrouter.ai/models](https://openrouter.ai/models).
-- The Jev client uses the REST shape from TypeSafe's launch docs (`POST /v1/systemone`). If calls fail, check the current API reference; only `JevJudge` needs to change.
-- Offline mocks are test doubles, not reviewers. They exist so you can see every node and edge run.
+- [ ] Run `flows review` on a real branch of your own.
+- [ ] Set `delivery.agent: claude-code` on a low-risk project and deliver one small task.
+- [ ] Add a golden-diff eval set under `evals/` before you tune the review prompts.
+- [ ] Swap `MemorySaver` for `@langchain/langgraph-checkpoint-sqlite` and add `flows resume`, so gates can wait across restarts.
+- [ ] Open a PR from the merge gate.
+- [ ] Add Langfuse tracing and compare judge cost between Jev and the LLM judge.
+- [ ] Let delivery write a replan proposal when a task contradicts the plan, and let planning resume from `breakdown`.

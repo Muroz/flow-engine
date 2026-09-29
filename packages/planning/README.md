@@ -1,0 +1,54 @@
+# @flows/planning
+
+The planning flow turns a client brief into the artifacts that delivery and review read: `docs/prd.md`, `docs/adr/*.md` and `plan/tasks.yaml`. It asks for you more than the other flows do, because this is where your judgement matters most.
+
+Every node runs, online and offline. The prompts in `prompts/planning/` are first drafts, so expect to rework them.
+
+## Graph
+
+```
+START → intake → assessBrief ─(gaps)─► askQuestions → clarify (gate) ─┐
+                     ▲  │ complete                                     │
+                     └──┼──────────────────────────────────────────────┘
+                        ▼
+               writeRequirements → approveScope (gate) ─(revise)─┐
+                     ▲                  │ approve                 │
+                     └──────────────────┼─────────────────────────┘
+                                        ▼ (fan-out, one per angle)
+               proposeOption ‖ proposeOption ‖ proposeOption
+                                        ▼
+               compareOptions → pickArchitecture (gate) → writeAdrs → breakdown ◄─┐
+                                                                         ▼        │ gaps, at most 2 rounds
+                                                                   checkCoverage ─┘
+                                                                         ▼
+                                                                   approvePlan (gate) → emit → END
+```
+
+| Node | Kind | What it does |
+|---|---|---|
+| `intake` | Deterministic | Reads the brief file. |
+| `assessBrief` | Judge | Asks whether the brief names users, core flows, constraints and success. |
+| `askQuestions` | Generative | Writes discovery questions for the gaps. |
+| `clarify` | Gate | Shows you the questions. Your notes become answers in the brief. After two rounds, the flow moves on anyway. |
+| `writeRequirements` | Generative | Writes numbered, testable requirements. |
+| `approveScope` | Gate | Approve, revise with notes or stop. |
+| `proposeOption` | Generative | Runs three times in parallel, once per angle in `ARCH_ANGLES`: the simplest option, one built to scale and one that buys instead of building. |
+| `compareOptions` | Generative | The reviewer model recommends one option. |
+| `pickArchitecture` | Gate | You pick an option, or stop. |
+| `writeAdrs` | Generative | Writes ADRs for the chosen option. |
+| `breakdown` | Generative | Splits the work into tasks with dependencies and acceptance criteria. |
+| `checkCoverage` | Judge and deterministic | One judge call asks whether each requirement is covered. Plain code finds tasks that trace to no requirement. Gaps send the breakdown back once; after that, open gaps go to you. |
+| `approvePlan` | Gate | Shows the tasks and ADRs, and any gaps still open. |
+| `emit` | Deterministic | Writes the PRD, ADRs and `tasks.yaml`. |
+
+The model call and the gate always sit in separate nodes. When LangGraph resumes after a gate, it re-runs the gate node from its first line, so a model call in the same node would run, and cost, twice.
+
+## Output
+
+`flows plan` writes a proposal to `runs/<project>/<run id>/proposed/`. Read it, then copy what you want into the project, or run again with `--write`.
+
+> **Warning:** `--write` writes straight into the artifacts folder and replaces `docs/prd.md`, `plan/tasks.yaml` and any ADR files with the same names.
+
+## Tests
+
+`test/routing.test.ts` covers the discovery and coverage loops. Run it with `pnpm test` from the engine root.
