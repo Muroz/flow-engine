@@ -60,11 +60,11 @@ export type ProjectConfig = {
 };
 
 const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
-  // Check https://openrouter.ai/models for current slugs; these are placeholders.
+  // Slugs from https://openrouter.ai/models. Keep the reviewer on a different vendor from the implementer.
   models: {
-    default: "anthropic/claude-sonnet-4.5",
-    reviewer: "openai/gpt-5",
-    judge: "openai/gpt-5-mini",
+    default: "anthropic/claude-sonnet-5.5",
+    reviewer: "openai/gpt-5.5",
+    judge: "openai/gpt-5.4-mini",
   },
   openrouterProvider: { data_collection: "deny" },
   judgeEngine: "auto",
