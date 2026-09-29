@@ -41,10 +41,12 @@ const concat = <T>(a: T[], b: T[]): T[] => a.concat(b);
 export const DeliveryAnnotation = Annotation.Root({
   task: Annotation<PlannedTask>,
   diffSource: Annotation<DiffSource>,
+  base: Annotation<string>,
   runId: Annotation<string>,
   plan: Annotation<DeliveryPlan | undefined>,
   attempts: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
   diff: Annotation<string | undefined>,
+  workdir: Annotation<string | undefined>,
   checks: Annotation<DeliveryState["checks"]>,
   review: Annotation<DeliveryState["review"]>,
   fixNotes: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),

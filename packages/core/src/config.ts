@@ -51,8 +51,16 @@ export type ProjectConfig = {
     maxAttempts: number;
     /** Plans at or below this risk skip the human plan gate. */
     autoApproveRisk: "none" | "low" | "medium";
-    /** Shell commands run in the repo after each implementation attempt. */
+    /** Shell commands run after each implementation attempt, in the agent's worktree when there is one. */
     checks: string[];
+    /**
+     * Who writes the code. "diff-file" replays the diff from --diff-file (or
+     * --base...--head) on every attempt, for demos and tests. "claude-code"
+     * runs Claude Code headless in a git worktree per task.
+     */
+    agent: "diff-file" | "claude-code";
+    /** Claude Code tool allow-list. Defaults to read/edit tools plus one Bash rule per check. */
+    agentTools?: string[];
   };
 
   /** Free-text team conventions handed to reviewers ("we use pnpm", "no default exports"). */
@@ -78,6 +86,7 @@ const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
     maxAttempts: 3,
     autoApproveRisk: "low",
     checks: [],
+    agent: "diff-file",
   },
   conventions: [],
 };

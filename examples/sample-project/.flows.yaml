@@ -24,7 +24,8 @@ review:
 delivery:
   maxAttempts: 3
   autoApproveRisk: low
-  checks:                         # run in the repo after each implementation attempt
+  agent: diff-file                # or claude-code: runs Claude Code in a git worktree per task
+  checks:                         # run in the agent's worktree after each implementation attempt
     - npm test --silent
 
 conventions:

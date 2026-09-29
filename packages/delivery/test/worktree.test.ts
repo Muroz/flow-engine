@@ -1,0 +1,56 @@
+/**
+ * The worktree helpers against a throwaway git repo. No agent runs here:
+ * the test edits the worktree itself, the way an agent would.
+ */
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { ENGINE_ROOT } from "@flows/core";
+import { ensureWorktree, worktreeDiff } from "../src/agents/claude-code";
+
+const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+
+function tempRepo(): string {
+  const repo = mkdtempSync(join(tmpdir(), "flows-repo-"));
+  git(repo, "init", "-q", "-b", "main");
+  git(repo, "config", "user.email", "test@example.com");
+  git(repo, "config", "user.name", "test");
+  writeFileSync(join(repo, "a.txt"), "one\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  return repo;
+}
+
+test("ensureWorktree creates one worktree per task and reuses it; worktreeDiff shows the agent's changes", (t) => {
+  const repo = tempRepo();
+  const project = `test-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  const dir = ensureWorktree(repo, project, "T-001", "main");
+  assert.equal(dir, join(ENGINE_ROOT, "runs", project, "worktrees", "T-001"));
+  assert.equal(git(dir, "branch", "--show-current").trim(), "flows/T-001");
+  assert.equal(ensureWorktree(repo, project, "T-001", "main"), dir);
+
+  writeFileSync(join(dir, "a.txt"), "two\n");
+  writeFileSync(join(dir, "b.txt"), "new\n");
+  const diff = worktreeDiff(dir, "main");
+  assert.match(diff, /^-one$/m);
+  assert.match(diff, /^\+two$/m);
+  assert.match(diff, /^\+\+\+ b\/b\.txt$/m);
+
+  // The main checkout is untouched.
+  assert.equal(git(repo, "status", "--porcelain"), "");
+});
+
+test("ensureWorktree refuses a folder inside a repo, so it never branches the wrong repository", (t) => {
+  const repo = tempRepo();
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  mkdirSync(join(repo, "sub"));
+  assert.throws(() => ensureWorktree(join(repo, "sub"), "x", "T-001", "main"), /root of a git repository/);
+});

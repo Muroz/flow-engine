@@ -4,21 +4,24 @@
  *   makePlan      generative   short implementation plan for the task
  *   assessRisk    judge        low/medium/high → decides whether you see the plan
  *   approvePlan   human gate   only when risk is above the auto-approve bar
- *   implement     generative   STUB — plug in your coding agent here
- *   runChecks     deterministic tests/lint/typecheck from .flows.yaml
- *   review        subgraph     the review flow, with explicit state mapping
+ *   implement     generative   replays a diff, or runs Claude Code in a worktree
+ *   runChecks     deterministic tests/lint/typecheck from .flows.yaml, in the worktree
+ *   runReview     subgraph     the review flow, with explicit state mapping
  *   escalate      human gate   stop rule hit, or the reviewer wants a human
  *   approveMerge  human gate   you approve outcome, not process
  */
 import { execSync } from "node:child_process";
 import {
+  loadAdrs,
   loadDiff,
   loadPrompt,
   logEntry,
   modelFor,
   parseJsonReply,
   render,
+  runDir,
   score,
+  writeRunFile,
   type FlowDeps,
   type GateDecision,
   type GateRequest,
@@ -26,6 +29,7 @@ import {
 } from "@flows/core";
 import { rank, type ReviewGraph, type ReviewState } from "@flows/review";
 import { END, interrupt } from "@langchain/langgraph";
+import { BASE_TOOLS, ensureWorktree, runClaudeCode, worktreeDiff } from "./agents/claude-code";
 import type { DeliveryState, DeliveryUpdate } from "./state";
 
 const RISKS: readonly Risk[] = ["low", "medium", "high"];
@@ -91,31 +95,54 @@ export const approvePlan = async (s: DeliveryState): Promise<DeliveryUpdate> => 
     : { outcome: "rejected", log: [logEntry("delivery.approvePlan", { note: `rejected: ${d.notes ?? ""}` })] };
 };
 
-// ── implement (STUB) ────────────────────────────────────────────────────────
+// ── implement ───────────────────────────────────────────────────────────────
 
 export const implement =
   (deps: FlowDeps) =>
   async (s: DeliveryState): Promise<DeliveryUpdate> => {
-    // ── Plug your coding agent in here ──────────────────────────────────────
-    // Typical shape: create a git worktree/branch for the task, then run a
-    // coding agent headless with the task, plan and fixNotes as its prompt, e.g.
-    //
-    //   claude -p "$PROMPT" --output-format json --permission-mode acceptEdits
-    //
-    // and read the resulting diff back with `git diff main...<branch>`.
-    // Keep the agent's own transcript OUT of state: store it as a run file
-    // and put only the diff (a reference would be even better) in state.
-    //
-    // Demo behaviour: use the diff given on the command line.
-    const diff = loadDiff(deps.config, s.diffSource);
+    const attempt = s.attempts + 1;
+    const addressing = s.fixNotes.length ? ` addressing ${s.fixNotes.length} note(s)` : "";
+
+    // Offline runs always replay the diff: the mocks don't write code.
+    if (deps.offline || deps.config.delivery.agent === "diff-file") {
+      return {
+        attempts: attempt,
+        diff: loadDiff(deps.config, s.diffSource),
+        log: [logEntry("delivery.implement", { note: `attempt ${attempt}${addressing} (diff-file)` })],
+      };
+    }
+
+    const workdir = ensureWorktree(deps.config.repoDir, deps.config.project, s.task.id, s.base);
+    const adrs = loadAdrs(deps.config, s.task.adrRefs);
+    const prompt = [
+      `Implement ${s.task.id}: ${s.task.title}`,
+      `Acceptance criteria:\n${bullets(s.task.acceptanceCriteria)}`,
+      `Plan:\n${bullets(s.plan?.steps ?? [])}`,
+      adrs.length ? `Decisions to respect:\n${adrs.map((a) => `${a.id}: ${a.title}\n${a.decision}`).join("\n\n")}` : "",
+      deps.config.conventions.length ? `Conventions:\n${bullets(deps.config.conventions)}` : "",
+      s.fixNotes.length ? `Fix these from the last attempt:\n${bullets(s.fixNotes)}` : "",
+      "Add or update tests. Do not commit.",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    // The transcript goes to a run file, not state. A failed agent run still
+    // leaves whatever it changed, so checks and review decide what happens next.
+    const tools = deps.config.delivery.agentTools ?? [...BASE_TOOLS, ...deps.config.delivery.checks.map((c) => `Bash(${c})`)];
+    let note = `attempt ${attempt}${addressing} (claude-code)`;
+    try {
+      const transcript = runClaudeCode(workdir, prompt, tools);
+      writeRunFile(runDir(deps.config, s.runId), `agent-attempt-${attempt}.json`, transcript);
+    } catch (e: any) {
+      writeRunFile(runDir(deps.config, s.runId), `agent-attempt-${attempt}.log`, `${e.message}\n${e.stdout ?? ""}${e.stderr ?? ""}`);
+      note += `: agent failed (${String(e.message).split("\n")[0]})`;
+    }
+
     return {
-      attempts: s.attempts + 1,
-      diff,
-      log: [
-        logEntry("delivery.implement", {
-          note: `attempt ${s.attempts + 1}${s.fixNotes.length ? ` addressing ${s.fixNotes.length} note(s)` : ""} (stub)`,
-        }),
-      ],
+      attempts: attempt,
+      workdir,
+      diff: worktreeDiff(workdir, s.base),
+      log: [logEntry("delivery.implement", { note })],
     };
   };
 
@@ -123,14 +150,14 @@ export const implement =
 
 export const runChecks =
   (deps: FlowDeps) =>
-  async (_s: DeliveryState): Promise<DeliveryUpdate> => {
+  async (s: DeliveryState): Promise<DeliveryUpdate> => {
     const cmds = deps.config.delivery.checks;
     if (deps.offline || cmds.length === 0) {
       return { checks: { passed: true, output: "skipped" }, log: [logEntry("delivery.checks", { note: "skipped" })] };
     }
     for (const cmd of cmds) {
       try {
-        execSync(cmd, { cwd: deps.config.repoDir, stdio: "pipe", timeout: 10 * 60_000 });
+        execSync(cmd, { cwd: s.workdir ?? deps.config.repoDir, stdio: "pipe", timeout: 10 * 60_000 });
       } catch (e: any) {
         const output = `${cmd} failed:\n${String(e.stdout ?? "")}${String(e.stderr ?? "")}`.slice(-2000);
         return {
@@ -193,12 +220,13 @@ export const approveMerge = async (s: DeliveryState): Promise<DeliveryUpdate> =>
     title: `Merge ${s.task.id}?`,
     summary: [
       `${s.task.title} — ${s.attempts} attempt(s)`,
-      `checks: ${s.checks?.passed ? "passing" : "not run"} · review: ${s.review?.verdict} (${s.review?.reason})`,
+      `checks: ${s.checks ? (s.checks.passed ? "passing" : "failing") : "not run"} · review: ${s.review?.verdict ?? "not run"} (${s.review?.reason ?? ""})`,
+      ...(s.workdir ? [`branch: flows/${s.task.id} in ${s.workdir}`] : []),
       ...(s.review?.findings.length ? ["", "Non-blocking comments:", bullets(s.fixNotes.slice(0, 6))] : []),
     ].join("\n"),
     options: ["merge", "reject"],
   });
-  // STUB: open/merge the PR here (e.g. `gh pr create --fill` then `gh pr merge`).
+  // Pushing and opening the PR stay with you (see docs/wiring.md, step 5).
   return {
     outcome: d.decision === "merge" ? "merged" : "rejected",
     log: [logEntry("delivery.approveMerge", { note: d.decision })],

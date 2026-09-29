@@ -3,11 +3,14 @@
  * flows — run a flow against a project.
  *
  *   flows review  --repo <dir> [--diff-file f | --base main --head HEAD] [--task T-002]
- *   flows deliver --repo <dir> --task T-002 [--diff-file f]
+ *   flows deliver --repo <dir> --task T-002 [--diff-file f] [--base main]
  *   flows plan    --repo <dir> --brief brief.md [--write]
  *   flows tasks   --repo <dir> [--done T-001,T-002]
  *
  * Common: [--artifacts <dir>] (shadow workspace) [--offline] [--yes] (auto-approve gates)
+ *
+ * Relative paths resolve against the directory you ran the command from, even
+ * through `pnpm --dir <engine> flows …` (pnpm sets INIT_CWD to that directory).
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -58,7 +61,9 @@ if (!command || !args.repo) {
   process.exit(1);
 }
 
-const config = loadConfig(args.repo, args.artifacts);
+const here = process.env.INIT_CWD ?? process.cwd();
+const abs = (p: string | undefined) => (p === undefined ? undefined : resolve(here, p));
+const config = loadConfig(abs(args.repo)!, abs(args.artifacts));
 
 if (command === "tasks") {
   // No models needed: just show the task DAG and what's ready to pick up.
@@ -74,7 +79,7 @@ registerReviewMocks(deps);
 registerDeliveryMocks(deps);
 registerPlanningMocks(deps);
 
-const diffSource: DiffSource = args["diff-file"] ? { diffFile: args["diff-file"] } : { base: args.base!, head: args.head! };
+const diffSource: DiffSource = args["diff-file"] ? { diffFile: abs(args["diff-file"])! } : { base: args.base!, head: args.head! };
 const task = args.task ? findTask(config, args.task) : undefined;
 if (args.task && !task) {
   console.error(`Task ${args.task} not found in ${config.artifactsDir}/plan/tasks.yaml`);
@@ -99,10 +104,11 @@ switch (command) {
     if (!task) throw new Error("deliver needs --task");
     const runId = newRunId(`deliver-${task.id}`);
     const graph = buildDeliveryGraph(deps);
-    const final = await drive<DeliveryState>(graph, { task, diffSource, runId }, runId, { yes: args.yes });
+    const final = await drive<DeliveryState>(graph, { task, diffSource, base: args.base!, runId }, runId, { yes: args.yes });
     writeRunFile(runDir(config, runId), "state.json", JSON.stringify(final, null, 2));
     if (final.review?.report) writeRunFile(runDir(config, runId), "review.md", final.review.report);
     console.log(`\n■ outcome: ${final.outcome} after ${final.attempts} attempt(s) · cost $${totalCost(final.log).toFixed(4)}`);
+    if (final.workdir) console.log(`🌿 branch flows/${task.id} in ${final.workdir}`);
     console.log(`📁 ${runDir(config, runId)}`);
     break;
   }
@@ -111,7 +117,7 @@ switch (command) {
     if (!args.brief) throw new Error("plan needs --brief <file>");
     const runId = newRunId("plan");
     const graph = buildPlanningGraph(deps, { outDir: args.write ? config.artifactsDir : resolve(runDir(config, runId), "proposed") });
-    const final = await drive<PlanningState>(graph, { briefPath: resolve(args.brief) }, runId, { yes: args.yes });
+    const final = await drive<PlanningState>(graph, { briefPath: abs(args.brief)! }, runId, { yes: args.yes });
     writeRunFile(runDir(config, runId), "state.json", JSON.stringify(final, null, 2));
     console.log(`\n■ planning ${final.emitted?.length ? "emitted" : "stopped"} · cost $${totalCost(final.log).toFixed(4)}`);
     for (const p of final.emitted ?? []) console.log(`  📄 ${p}`);
