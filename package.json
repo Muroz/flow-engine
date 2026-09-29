@@ -14,7 +14,7 @@
     "verify": "bash scripts/verify.sh"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.12.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
