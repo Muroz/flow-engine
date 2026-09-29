@@ -1,0 +1,78 @@
+import { MockJudge, MockModelClient, type FlowDeps } from "@flows/core";
+
+/** Offline stand-ins for the planning flow. Shaped so the loops actually run once. */
+export function registerPlanningMocks(deps: FlowDeps): void {
+  if (deps.model instanceof MockModelClient) {
+    deps.model.register((req) => {
+      switch (req.tag) {
+        case "planning.questions":
+          return JSON.stringify({
+            questions: [
+              "Who pays for return shipping, and does it vary by reason?",
+              "Which carrier(s) issue labels today?",
+              "Is there a return window (e.g. 30 days)?",
+              "What does success look like — fewer support emails, faster refunds?",
+            ],
+          });
+        case "planning.requirements":
+          return JSON.stringify({
+            requirements: [
+              { id: "R-1", text: "Customers can start a return for an eligible order within the return window." },
+              { id: "R-2", text: "Customers choose items and a reason for each." },
+              { id: "R-3", text: "Customers receive a printable shipping label." },
+              { id: "R-4", text: "Support staff can review pending returns and approve or reject them." },
+            ],
+          });
+        case "planning.option": {
+          const angle = req.user.match(/ANGLE: (.*)/)?.[1] ?? "";
+          return JSON.stringify(
+            angle.startsWith("simplest")
+              ? { summary: "Extend the existing API with a returns module and Postgres tables; labels via the carrier's REST API.", tradeoffs: ["Fastest to ship", "Carrier coupling in our code"] }
+              : angle.startsWith("built")
+                ? { summary: "Separate returns service with an event bus between orders, returns and labels.", tradeoffs: ["Scales independently", "Much more infrastructure for a small client"] }
+                : { summary: "Use a hosted returns platform and integrate via webhooks.", tradeoffs: ["Least code", "Monthly fee and less control over UX"] },
+          );
+        }
+        case "planning.compare":
+          return JSON.stringify({ recommended: "A", why: "Smallest change to a stack the client already runs; the scale option is premature." });
+        case "planning.adrs":
+          return JSON.stringify({
+            adrs: [
+              { title: "Returns live in the existing API as a module", context: "Small client, one team, existing Node/Postgres API.", decision: "Add a returns module to the existing API with its own tables; no new service.", consequences: "Simple deploys; revisit if returns volume grows 10x." },
+              { title: "Carrier access goes through a single adapter", context: "Labels come from an external carrier API.", decision: "All carrier calls go through src/carriers/adapter.ts so the carrier can be swapped.", consequences: "One extra layer; tests stub the adapter." },
+            ],
+          });
+        case "planning.breakdown": {
+          const t = (id: string, title: string, reqs: string[], deps: string[], ac: string[], risk = "low") => ({
+            id, title, requirementIds: reqs, adrRefs: ["ADR-0001"], dependsOn: deps, acceptanceCriteria: ac, risk, estimate: "M",
+          });
+          const tasks = [
+            t("T-001", "Returns schema and eligibility rules", ["R-1"], [], ["Orders outside the window are ineligible"], "medium"),
+            t("T-002", "Start-return API: items and reasons", ["R-1", "R-2"], ["T-001"], ["Each item needs a reason", "Rejects ineligible orders"]),
+            t("T-003", "Carrier adapter and label generation", ["R-3"], ["T-002"], ["Returns a printable PDF label"], "medium"),
+          ];
+          // First round "forgets" the support workflow so the coverage loop has something to catch.
+          if (req.user.includes("GAPS"))
+            tasks.push(t("T-004", "Support review queue: approve/reject", ["R-4"], ["T-002"], ["Staff see pending returns", "Approve/reject is audited"]));
+          return JSON.stringify({ tasks });
+        }
+      }
+      return undefined;
+    });
+  }
+
+  if (deps.judge instanceof MockJudge) {
+    deps.judge.rule((key, _q, state: any) => {
+      // Brief completeness: incomplete until discovery answers have been added.
+      if (key === "complete" && typeof state?.brief === "string")
+        return { p: state.brief.includes("Answers to discovery questions") ? 0.85 : 0.4 };
+      // Coverage: covered if some task claims the requirement.
+      const m = key.match(/^R_(\d+)$/);
+      if (m && Array.isArray(state?.tasks)) {
+        const covered = state.tasks.some((t: any) => t.requirementIds?.includes(`R-${m[1]}`));
+        return { p: covered ? 0.9 : 0.1 };
+      }
+      return undefined;
+    });
+  }
+}

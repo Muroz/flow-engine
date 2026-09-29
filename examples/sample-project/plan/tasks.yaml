@@ -1,0 +1,32 @@
+tasks:
+  - id: T-001
+    title: List orders for a customer
+    requirementIds: [R-1]
+    adrRefs: [ADR-0001]
+    dependsOn: []
+    acceptanceCriteria:
+      - GET /customers/:id/orders returns that customer's orders
+    risk: low
+    estimate: S
+
+  - id: T-002
+    title: Search orders by status and date range
+    requirementIds: [R-2, R-3]
+    adrRefs: [ADR-0001]
+    dependsOn: [T-001]
+    acceptanceCriteria:
+      - Filters by status and by created_at range
+      - Results are paginated with a maximum page size of 50
+      - Invalid dates return a 400 response
+    risk: medium
+    estimate: M
+
+  - id: T-003
+    title: Export search results as CSV
+    requirementIds: [R-2]
+    adrRefs: [ADR-0001]
+    dependsOn: [T-002]
+    acceptanceCriteria:
+      - Same filters as search, streamed as text/csv
+    risk: low
+    estimate: S

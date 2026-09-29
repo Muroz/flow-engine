@@ -1,0 +1,12 @@
+{
+  "name": "@flows/review",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@flows/core": "workspace:*",
+    "@langchain/core": "^1.0.0",
+    "@langchain/langgraph": "^1.0.0"
+  }
+}

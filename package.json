@@ -1,0 +1,25 @@
+{
+  "name": "flow-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Graph-based agent flows (planning, delivery, review) built on LangGraph.js, OpenRouter and Jev",
+  "scripts": {
+    "flows": "tsx packages/cli/src/index.ts",
+    "review:sample": "tsx packages/cli/src/index.ts review --repo examples/sample-project --diff-file examples/sample-project/changes/T-002.diff --task T-002 --offline",
+    "deliver:sample": "tsx packages/cli/src/index.ts deliver --repo examples/sample-project --diff-file examples/sample-project/changes/T-002.diff --task T-002 --offline",
+    "plan:sample": "tsx packages/cli/src/index.ts plan --repo examples/sample-project --brief examples/sample-project/brief.md --offline",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test packages/*/test/*.test.ts",
+    "verify": "bash scripts/verify.sh"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

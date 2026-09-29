@@ -1,0 +1,32 @@
+# Per-project flow config. For client repos that shouldn't carry this file,
+# keep it (and docs/, plan/) in a shadow workspace and pass --artifacts <dir>.
+project: sample-project
+
+models:
+  # Check https://openrouter.ai/models for current slugs.
+  default: anthropic/claude-sonnet-4.5
+  reviewer: openai/gpt-5          # different vendor than the implementer on purpose
+  judge: openai/gpt-5-mini        # only used when Jev isn't available
+
+openrouter:
+  provider:
+    data_collection: deny         # honour the client's AI policy here
+
+judge:
+  engine: auto                    # jev if TYPESAFE_API_KEY is set, otherwise llm
+
+review:
+  reviewers: [spec, correctness, security, tests, architecture]
+  minConfidence: 0.6
+  escalateAtSeverity: blocker
+  dropSeverities: [nit]
+
+delivery:
+  maxAttempts: 3
+  autoApproveRisk: low
+  checks:                         # run in the repo after each implementation attempt
+    - npm test --silent
+
+conventions:
+  - Route handlers live in src/routes and stay thin; logic goes in src/services.
+  - Never log request bodies.

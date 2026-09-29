@@ -1,0 +1,14 @@
+{
+  "name": "@flows/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flows/core": "workspace:*",
+    "@flows/review": "workspace:*",
+    "@flows/delivery": "workspace:*",
+    "@flows/planning": "workspace:*",
+    "@langchain/langgraph": "^1.0.0",
+    "@langchain/core": "^1.0.0"
+  }
+}
