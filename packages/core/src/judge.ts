@@ -105,12 +105,25 @@ export class JevJudge implements Judge {
       } else if (q.type === "choice") {
         out[key] = { choice: a.choice, confidence: Number(a.confidence ?? a.probabilities?.[a.choice] ?? 0) };
       } else {
-        const index = typeof a.score === "number" ? a.score : q.levels.indexOf(a.score);
-        out[key] = { level: q.levels[index] ?? q.levels[0], index: Math.max(0, index), confidence: Number(a.confidence ?? 0) };
+        const index = jevScoreIndex(a, q.levels);
+        out[key] = { level: q.levels[index], index, confidence: Number(a.confidence ?? 0) };
       }
     }
     return out as Answers<Q>;
   }
+}
+
+/**
+ * Jev's `score` is a weighted position on the scale, such as 2.2, not an
+ * index. Take the most probable level; without probabilities, round the score.
+ */
+export function jevScoreIndex(a: { score?: unknown; probabilities?: Record<string, number> }, levels: readonly string[]): number {
+  let index: number;
+  const probs = Object.entries(a.probabilities ?? {});
+  if (probs.length) index = Number(probs.reduce((best, p) => (p[1] > best[1] ? p : best))[0]);
+  else if (typeof a.score === "number") index = Math.round(a.score);
+  else index = levels.indexOf(String(a.score));
+  return Number.isFinite(index) ? Math.min(levels.length - 1, Math.max(0, index)) : 0;
 }
 
 // ── LLM fallback ────────────────────────────────────────────────────────────
