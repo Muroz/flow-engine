@@ -26,7 +26,7 @@ export function createDeps(config: ProjectConfig, opts: { offline?: boolean } = 
 
   const jevKey = process.env.TYPESAFE_API_KEY;
   let judge: Judge;
-  if (config.judgeEngine === "jev" || (config.judgeEngine === "auto" && jevKey)) {
+  if (judgeEngine(config, !!jevKey) === "jev") {
     if (!jevKey) throw new Error("judge.engine is 'jev' but TYPESAFE_API_KEY is not set.");
     judge = new JevJudge(jevKey);
   } else {
@@ -34,4 +34,16 @@ export function createDeps(config: ProjectConfig, opts: { offline?: boolean } = 
   }
 
   return { config, model, judge, offline: false };
+}
+
+/**
+ * Which judge a run uses. Jev calls go straight to TypeSafe, not through
+ * OpenRouter, so `openrouter.provider` can't restrict them. A project that
+ * sets a provider allow-list (`only`) has an AI policy to honour: under
+ * "auto" it gets the LLM judge, and Jev only when `judge.engine` says "jev".
+ */
+export function judgeEngine(config: ProjectConfig, hasJevKey: boolean): "jev" | "llm" {
+  if (config.judgeEngine !== "auto") return config.judgeEngine;
+  const restricted = Array.isArray(config.openrouterProvider?.only);
+  return hasJevKey && !restricted ? "jev" : "llm";
 }

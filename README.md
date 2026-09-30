@@ -160,7 +160,7 @@ Three LangGraph rules have already caused bugs here:
 | Layer | Tool | Code |
 |---|---|---|
 | Generative nodes | OpenRouter. `.flows.yaml` sets a model per role, and `openrouter.provider` enforces a client's data policy. | `packages/core/src/models.ts` |
-| Judge nodes | Jev asks `noul` (yes or no), `choice` and `score` questions over one piece of state, several in one call. Without a Jev key, an LLM judge with the same interface takes over. | `packages/core/src/judge.ts` |
+| Judge nodes | Jev asks `noul` (yes or no), `choice` and `score` questions over one piece of state, several in one call. It calls TypeSafe directly, because OpenRouter only offers Jev as a model router, without these question types. Without a Jev key, or on a project with a provider allow-list, an LLM judge with the same interface takes over. | `packages/core/src/judge.ts` |
 | Coding agent | Claude Code, headless, in one git worktree per task. | `packages/delivery/src/agents/claude-code.ts` |
 | Orchestration | LangGraph.js: `StateGraph`, `Send`, `interrupt` and a checkpointer. | `packages/*/src/graph.ts` |
 | Knowledge | ADRs and `tasks.yaml`. | `packages/core/src/artifacts.ts` |
@@ -177,7 +177,7 @@ some-project/
   plan/tasks.yaml
 ```
 
-For a client repo that shouldn't carry these files, keep them in a workspace folder you own and pass `--artifacts <dir>`. Check the client's AI policy before you send their code to any model.
+For a client repo that shouldn't carry these files, keep them in a workspace folder you own and pass `--artifacts <dir>`. Check the client's AI policy before you send their code to any model, and write it into `openrouter.provider.only`. That list also keeps Jev off the project unless you turn it on; see [Client repos](docs/wiring.md#client-repos).
 
 ## Known limits
 

@@ -37,7 +37,7 @@ There are three question types:
 - `choice(instructions, options)` picks one option and returns `{ choice, confidence }`.
 - `score(instructions, levels)` places the state on an ordered scale and returns `{ level, index, confidence }`.
 
-`createDeps` picks the engine from `judge.engine` and the keys it finds. See [docs/configuration.md](../../docs/configuration.md#openrouter-and-judge).
+`judgeEngine` in `deps.ts` picks the engine. `jev` and `llm` are explicit. `auto` picks Jev when `TYPESAFE_API_KEY` is set and the project has no `openrouter.provider.only` list, because Jev calls go straight to TypeSafe and that list can't restrict them. See [docs/configuration.md](../../docs/configuration.md#openrouter-and-judge).
 
 ## Mocks
 

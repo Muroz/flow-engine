@@ -35,7 +35,7 @@ The script installs dependencies, type-checks, runs the unit tests and all three
 
 2. Add your keys to `.env`:
    - `OPENROUTER_API_KEY`, which every live run needs.
-   - `TYPESAFE_API_KEY` for Jev, which is optional. Without it, the judges fall back to an LLM judge through OpenRouter, which is slower and costs more.
+   - `TYPESAFE_API_KEY` for Jev, which is optional. Without it, the judges fall back to an LLM judge through OpenRouter, which is slower and costs more. Jev calls go straight to TypeSafe, not through OpenRouter; [Client repos](#client-repos) explains what that means for client code.
 3. Check the model slugs in your project's `.flows.yaml` against [openrouter.ai/models](https://openrouter.ai/models). Keep `reviewer` on a different vendor from `default` and `implementer`.
 4. Run the live smoke test. It reviews the sample diff with real models, which costs a few cents:
 
@@ -78,6 +78,15 @@ openrouter:
     data_collection: deny
     only: [anthropic]  # whichever providers the client allows
 ```
+
+Jev calls go straight to TypeSafe and skip this allow-list. Setting `only` keeps them off: under `judge.engine: auto`, a project with an allow-list uses the LLM judge through OpenRouter, even when `TYPESAFE_API_KEY` is set. If the client approves TypeSafe, add this to the workspace config:
+
+```yaml
+judge:
+  engine: jev
+```
+
+Each run's first line names the judge it uses, for example `judge llm`. Check it before the first run on a client repo.
 
 ### Tuning the judge
 

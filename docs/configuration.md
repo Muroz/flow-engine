@@ -61,8 +61,10 @@ Model IDs are OpenRouter slugs. Check the list at [openrouter.ai/models](https:/
 
 | Key | Default | Meaning |
 |---|---|---|
-| `openrouter.provider` | `{ data_collection: deny }` | Sent to OpenRouter as its `provider` routing object. Use it to follow a client's AI policy, for example `only: [anthropic]`. |
-| `judge.engine` | `auto` | `jev` uses Jev and fails without `TYPESAFE_API_KEY`. `llm` uses `models.judge` through OpenRouter. `auto` uses Jev when the key is set and the LLM judge when it isn't. |
+| `openrouter.provider` | `{ data_collection: deny }` | Sent to OpenRouter as its `provider` routing object. Use it to follow a client's AI policy, for example `only: [anthropic]`. It covers every OpenRouter call, but not Jev. |
+| `judge.engine` | `auto` | `jev` uses Jev and fails without `TYPESAFE_API_KEY`. `llm` uses `models.judge` through OpenRouter. `auto` uses Jev when the key is set and `openrouter.provider.only` isn't, and the LLM judge otherwise. |
+
+Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provider` can't restrict them. Review triage sends Jev each finding with its file's diff. Delivery sends it the task and plan, and planning sends the brief and the task list. Setting `openrouter.provider.only` marks a project as having an AI policy: under `auto`, its judges then use the LLM judge, which follows that policy. Set `judge.engine: jev` on such a project only once the client has approved TypeSafe.
 
 ### Review
 
@@ -96,5 +98,5 @@ The CLI reads `.env` in the engine root. `.env.example` lists the variables.
 | Variable | Meaning |
 |---|---|
 | `OPENROUTER_API_KEY` | Needed for any run without `--offline`. |
-| `TYPESAFE_API_KEY` | Turns on Jev when `judge.engine` is `auto` or `jev`. |
+| `TYPESAFE_API_KEY` | Turns on Jev when `judge.engine` is `jev`, or `auto` with no `openrouter.provider.only`. |
 | `FLOWS_OFFLINE` | `1` has the same effect as `--offline`. |
