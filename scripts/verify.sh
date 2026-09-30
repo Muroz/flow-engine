@@ -2,7 +2,8 @@
 # Full check of the engine. Writes everything to runs/verify.log.
 #
 #   bash scripts/verify.sh          # offline: install, typecheck, tests, all three sample flows
-#   bash scripts/verify.sh --live   # also one real review through OpenRouter (+ Jev if keyed). Costs cents.
+#   bash scripts/verify.sh --live         # also one real review through OpenRouter (+ Jev if keyed). Costs cents.
+#   bash scripts/verify.sh --live-claude  # also one real review on local Claude Code. No OpenRouter key needed.
 set -u
 cd "$(dirname "$0")/.."
 mkdir -p runs
@@ -32,6 +33,16 @@ run() { "$@"; local c=$?; echo "── exit $c"; return 0; }
         --diff-file examples/sample-project/changes/T-002.diff --task T-002
     else
       echo "skipped: set OPENROUTER_API_KEY in .env first"
+    fi
+  fi
+
+  if [ "${1:-}" = "--live-claude" ]; then
+    step "review (LIVE, Claude Code)"
+    if command -v claude >/dev/null 2>&1; then
+      run $PNPM flows review --repo examples/sample-project \
+        --diff-file examples/sample-project/changes/T-002.diff --task T-002 --claude-code
+    else
+      echo "skipped: install Claude Code and sign in first"
     fi
   fi
 

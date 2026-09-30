@@ -7,7 +7,8 @@
  *   flows plan    --repo <dir> --brief brief.md [--write]
  *   flows tasks   --repo <dir> [--done T-001,T-002]
  *
- * Common: [--artifacts <dir>] (shadow workspace) [--offline] [--yes] (auto-approve gates)
+ * Common: [--artifacts <dir>] (shadow workspace) [--offline] [--claude-code] (every model on local Claude Code)
+ *         [--yes] (auto-approve gates)
  *
  * Relative paths resolve against the directory you ran the command from, even
  * through `pnpm --dir <engine> flows …` (pnpm sets INIT_CWD to that directory).
@@ -51,6 +52,7 @@ const { positionals, values: args } = parseArgs({
     done: { type: "string" },
     write: { type: "boolean", default: false },
     offline: { type: "boolean", default: false },
+    "claude-code": { type: "boolean", default: false },
     yes: { type: "boolean", default: false },
   },
 });
@@ -74,7 +76,7 @@ if (command === "tasks") {
   process.exit(0);
 }
 
-const deps = createDeps(config, { offline: args.offline });
+const deps = createDeps(config, { offline: args.offline, claudeCode: args["claude-code"] });
 registerReviewMocks(deps);
 registerDeliveryMocks(deps);
 registerPlanningMocks(deps);
@@ -86,7 +88,8 @@ if (args.task && !task) {
   process.exit(1);
 }
 
-console.log(`▶ ${command} · project ${config.project} · judge ${deps.judge.name}${deps.offline ? " · OFFLINE (mocks)" : ""}\n`);
+const models = deps.offline ? " · OFFLINE (mocks)" : ` · models ${deps.backends.join("+") || "none"}`;
+console.log(`▶ ${command} · project ${config.project} · judge ${deps.judge.name}${models}\n`);
 
 switch (command) {
   case "review": {

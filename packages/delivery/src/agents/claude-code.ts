@@ -11,7 +11,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { ENGINE_ROOT } from "@flows/core";
+import { CLAUDE_CODE_PREFIX, ENGINE_ROOT, isClaudeCodeModel } from "@flows/core";
 
 /** Read-only and edit tools the agent always gets. Checks are added per project. */
 export const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
@@ -32,11 +32,28 @@ export function ensureWorktree(repo: string, project: string, taskId: string, ba
   return dir;
 }
 
+/**
+ * The `--model` value for the agent: the part after `claude-code/` in
+ * `models.implementer`. An OpenRouter slug, or no setting, leaves the choice
+ * to Claude Code.
+ */
+export function agentModel(implementer: string | undefined): string | undefined {
+  if (!implementer || !isClaudeCodeModel(implementer)) return undefined;
+  const alias = implementer.slice(CLAUDE_CODE_PREFIX.length);
+  return alias && alias !== "default" ? alias : undefined;
+}
+
 /** Run Claude Code headless in `workdir`. Returns its JSON transcript. */
-export function runClaudeCode(workdir: string, prompt: string, allowedTools: string[]): string {
+export function runClaudeCode(workdir: string, prompt: string, allowedTools: string[], model?: string): string {
   return execFileSync(
     "claude",
-    ["-p", prompt, "--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", allowedTools.join(",")],
+    [
+      "-p", prompt,
+      "--output-format", "json",
+      "--permission-mode", "acceptEdits",
+      "--allowedTools", allowedTools.join(","),
+      ...(model ? ["--model", model] : []),
+    ],
     { cwd: workdir, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 30 * 60_000 },
   );
 }

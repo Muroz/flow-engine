@@ -13,6 +13,7 @@ const deps = {
   model: new MockModelClient(),
   judge: new MockJudge(),
   offline: true,
+  backends: [],
 } satisfies FlowDeps;
 
 const s = (over: Partial<DeliveryState>): DeliveryState =>

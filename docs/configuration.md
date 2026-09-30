@@ -47,22 +47,33 @@ conventions:
 
 ### Models
 
-Model IDs are OpenRouter slugs. Check the list at [openrouter.ai/models](https://openrouter.ai/models).
+A model ID picks its backend:
+
+- An OpenRouter slug, such as `openai/gpt-5.5`, goes through OpenRouter. Check the list at [openrouter.ai/models](https://openrouter.ai/models).
+- `claude-code/<model>` runs the local `claude` CLI with its own sign-in. The part after the slash goes to `claude --model`: an alias such as `sonnet`, `opus` or `haiku`, or a full model name. `claude-code/default` lets Claude Code pick.
+
+Each role can use either backend, and one run can mix them.
 
 | Key | Default | Used by |
 |---|---|---|
 | `models.default` | `anthropic/claude-sonnet-5.5` | Any role you don't set. |
 | `models.planner` | `models.default` | Delivery's plan and every planning node except `compareOptions`. |
-| `models.implementer` | `models.default` | Reserved for an OpenRouter-based agent. Claude Code picks its own model. |
+| `models.implementer` | `models.default` | The Claude Code agent, when `delivery.agent` is `claude-code`. A `claude-code/<model>` ID sets its `--model`. An OpenRouter slug leaves the choice to Claude Code. |
 | `models.reviewer` | `openai/gpt-5.5` | The five review specialists and planning's `compareOptions`. Keep it on a different vendor from the implementer, so the checker isn't grading its own work. |
 | `models.judge` | `openai/gpt-5.4-mini` | The LLM judge. Only used when Jev isn't. |
+
+`createDeps` in `packages/core/src/deps.ts` checks the roles a run will call before it starts. It fails with the list of roles that need `OPENROUTER_API_KEY` when the key is missing. With `--claude-code`, or `FLOWS_CLAUDE_CODE=1`, it moves every role that isn't already on `claude-code/` to `claude-code/default`.
+
+Each Claude Code call runs `claude -p` from the system temp folder with every tool off, no settings files, no MCP servers and no saved session. The model sees the node's system prompt and message and nothing else, so a project's `CLAUDE.md` never leaks in. Claude Code has no temperature setting, so the flows can't lower it for judges. The cost the report shows is Claude Code's list-price figure. On a Claude plan, that isn't what you pay.
+
+Claude Code sends prompts straight to Anthropic, so `openrouter.provider` can't restrict it. A project whose `openrouter.provider.only` list leaves out `anthropic` refuses `claude-code/` models and `--claude-code`.
 
 ### OpenRouter and judge
 
 | Key | Default | Meaning |
 |---|---|---|
-| `openrouter.provider` | `{ data_collection: deny }` | Sent to OpenRouter as its `provider` routing object. Use it to follow a client's AI policy, for example `only: [anthropic]`. It covers every OpenRouter call, but not Jev. |
-| `judge.engine` | `auto` | `jev` uses Jev and fails without `TYPESAFE_API_KEY`. `llm` uses `models.judge` through OpenRouter. `auto` uses Jev when the key is set and `openrouter.provider.only` isn't, and the LLM judge otherwise. |
+| `openrouter.provider` | `{ data_collection: deny }` | Sent to OpenRouter as its `provider` routing object. Use it to follow a client's AI policy, for example `only: [anthropic]`. It covers every OpenRouter call, but not Jev or Claude Code. An `only` list without `anthropic` also keeps Claude Code models out. |
+| `judge.engine` | `auto` | `jev` uses Jev and fails without `TYPESAFE_API_KEY`. `llm` uses `models.judge` on its backend. `auto` uses Jev when the key is set and `openrouter.provider.only` isn't, and the LLM judge otherwise. |
 
 Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provider` can't restrict them. Review triage sends Jev each finding with its file's diff. Delivery sends it the task and plan, and planning sends the brief and the task list. Setting `openrouter.provider.only` marks a project as having an AI policy: under `auto`, its judges then use the LLM judge, which follows that policy. Set `judge.engine: jev` on such a project only once the client has approved TypeSafe.
 
@@ -97,6 +108,7 @@ The CLI reads `.env` in the engine root. `.env.example` lists the variables.
 
 | Variable | Meaning |
 |---|---|
-| `OPENROUTER_API_KEY` | Needed for any run without `--offline`. |
+| `OPENROUTER_API_KEY` | Needed when at least one role in the run uses an OpenRouter slug. |
 | `TYPESAFE_API_KEY` | Turns on Jev when `judge.engine` is `jev`, or `auto` with no `openrouter.provider.only`. |
 | `FLOWS_OFFLINE` | `1` has the same effect as `--offline`. |
+| `FLOWS_CLAUDE_CODE` | `1` has the same effect as `--claude-code`. |

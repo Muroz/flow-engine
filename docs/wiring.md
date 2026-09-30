@@ -5,7 +5,7 @@ Work through these stages in order. Each one works on its own, so you can stop a
 | Stage | You get | Effort |
 |---|---|---|
 | 0. Verify | Proof that the engine runs on your machine | 5 minutes |
-| 1. Keys and a real review | AI code review on any branch, yours or a client's | 30 minutes |
+| 1. Keys and a real review | AI code review on any branch, yours or a client's, through OpenRouter, local Claude Code or both | 30 minutes |
 | 2. Review in CI | A review on every PR, posted as a comment | 1 hour |
 | 3. Coding agent | Delivery writes code in a worktree per task | 30 minutes |
 | 4. Persistent runs and remote gates | Runs that survive restarts, and approvals from your phone | Half a day, not built yet |
@@ -51,6 +51,15 @@ The script installs dependencies, type-checks, runs the unit tests and all three
 
    To run `flows` from inside the project folder instead, add the alias from [Use it on your own project](../README.md#use-it-on-your-own-project).
 
+### Without an OpenRouter key
+
+Every step above has a Claude Code alternative. It needs the `claude` CLI signed in on your `PATH`, and nothing in `.env`:
+
+- The smoke test is `bash scripts/verify.sh --live-claude`.
+- A branch review is `pnpm flows review --repo /path/to/project --base main --head my-branch --claude-code`.
+
+`--claude-code` runs every role on Claude Code for that run. To keep some roles on OpenRouter, set the others to `claude-code/<model>` in `.flows.yaml` instead, as [Model backends](../README.md#model-backends) shows. With every role on Claude Code, one vendor both writes and checks the work. That's fine for trying the engine and weaker for real reviews, so move `reviewer` back to another vendor once you have an OpenRouter key.
+
 A project without `.flows.yaml` gets the defaults: no ADRs, no conventions and no spec reviewer, which only runs when you pass `--task`. For more useful reviews, add a `.flows.yaml`, a few ADRs under `docs/adr/` and your conventions. The architecture reviewer then has something to check against. [configuration.md](configuration.md) lists every setting.
 
 ### Client repos
@@ -70,7 +79,7 @@ Point the review at both:
 pnpm flows review --repo /path/to/client-repo --artifacts /path/to/workspaces/<client> --base main --head feature-x
 ```
 
-Before you send a client's code anywhere, confirm their AI policy. Then restrict providers in that workspace's config:
+Before you send a client's code anywhere, confirm their AI policy. Then restrict providers in that workspace's config. The list also governs Claude Code: without `anthropic` in it, the run refuses `claude-code/` models.
 
 ```yaml
 openrouter:
@@ -137,6 +146,22 @@ jobs:
 
 `flows review` exits with code 2 when the verdict isn't `pass`. `set -o pipefail` passes that code through `tee`, so the job fails on blocking findings. Without it, the step would take `tee`'s exit code and always pass.
 
+To run the review on Claude Code in CI, install the CLI and give it a token instead of the OpenRouter key. `claude setup-token` on your machine prints a long-lived token for your Claude plan. Save it as the `CLAUDE_CODE_OAUTH_TOKEN` secret and change the review steps:
+
+```yaml
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: |
+          set -o pipefail
+          cd .flow-engine
+          pnpm flows review --claude-code --repo "$GITHUB_WORKSPACE" \
+            --base "origin/${{ github.base_ref }}" --head HEAD | tee ../review.txt
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+```
+
+To mix backends in CI, drop `--claude-code`, set the models in `.flows.yaml` and pass both secrets.
+
 `FLOW_ENGINE_TOKEN` is a token that can read your flow-engine repo. For client repos, run the review from your own machine or CI instead of theirs. That keeps your engine private.
 
 ## 3. Coding agent
@@ -163,6 +188,8 @@ To turn it on:
    ```
 
    The agent may run exactly these check commands and nothing else in Bash. To widen that, set `delivery.agentTools` in Claude Code's `--allowedTools` syntax.
+
+   To pick the agent's model, set `models.implementer: claude-code/opus`, or any other `claude-code/` model. Without it, Claude Code uses its own default.
 
 4. Deliver a small, low-risk task:
 

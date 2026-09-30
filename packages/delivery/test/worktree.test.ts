@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ENGINE_ROOT } from "@flows/core";
-import { ensureWorktree, worktreeDiff } from "../src/agents/claude-code";
+import { agentModel, ensureWorktree, worktreeDiff } from "../src/agents/claude-code";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
 
@@ -53,4 +53,11 @@ test("ensureWorktree refuses a folder inside a repo, so it never branches the wr
   t.after(() => rmSync(repo, { recursive: true, force: true }));
   mkdirSync(join(repo, "sub"));
   assert.throws(() => ensureWorktree(join(repo, "sub"), "x", "T-001", "main"), /root of a git repository/);
+});
+
+test("agentModel takes the model from a claude-code/ implementer and ignores OpenRouter slugs", () => {
+  assert.equal(agentModel("claude-code/opus"), "opus");
+  assert.equal(agentModel("claude-code/default"), undefined);
+  assert.equal(agentModel("anthropic/claude-sonnet-5.5"), undefined);
+  assert.equal(agentModel(undefined), undefined);
 });

@@ -29,7 +29,7 @@ import {
 } from "@flows/core";
 import { rank, type ReviewGraph, type ReviewState } from "@flows/review";
 import { END, interrupt } from "@langchain/langgraph";
-import { BASE_TOOLS, ensureWorktree, runClaudeCode, worktreeDiff } from "./agents/claude-code";
+import { agentModel, BASE_TOOLS, ensureWorktree, runClaudeCode, worktreeDiff } from "./agents/claude-code";
 import type { DeliveryState, DeliveryUpdate } from "./state";
 
 const RISKS: readonly Risk[] = ["low", "medium", "high"];
@@ -129,9 +129,10 @@ export const implement =
     // The transcript goes to a run file, not state. A failed agent run still
     // leaves whatever it changed, so checks and review decide what happens next.
     const tools = deps.config.delivery.agentTools ?? [...BASE_TOOLS, ...deps.config.delivery.checks.map((c) => `Bash(${c})`)];
-    let note = `attempt ${attempt}${addressing} (claude-code)`;
+    const model = agentModel(deps.config.models.implementer);
+    let note = `attempt ${attempt}${addressing} (claude-code${model ? ` ${model}` : ""})`;
     try {
-      const transcript = runClaudeCode(workdir, prompt, tools);
+      const transcript = runClaudeCode(workdir, prompt, tools, model);
       writeRunFile(runDir(deps.config, s.runId), `agent-attempt-${attempt}.json`, transcript);
     } catch (e: any) {
       writeRunFile(runDir(deps.config, s.runId), `agent-attempt-${attempt}.log`, `${e.message}\n${e.stdout ?? ""}${e.stderr ?? ""}`);

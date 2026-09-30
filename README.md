@@ -1,6 +1,6 @@
 # flow-engine
 
-flow-engine runs software work as graphs of small steps. It uses LangGraph.js for orchestration, OpenRouter for models and Jev for judges. You approve intent (scope, architecture, risky plans) and outcomes (merges). The graph runs everything in between, puts a judge or plain code in front of every branch and logs every step.
+flow-engine runs software work as graphs of small steps. It uses LangGraph.js for orchestration, OpenRouter or your local Claude Code for models and Jev for judges. You approve intent (scope, architecture, risky plans) and outcomes (merges). The graph runs everything in between, puts a judge or plain code in front of every branch and logs every step.
 
 It has three flows:
 
@@ -26,8 +26,8 @@ It has three flows:
 - Node.js 20.12 or later. The CLI loads `.env` with `process.loadEnvFile`, which arrived in 20.12.
 - pnpm 9. Run `corepack enable` if you don't have it.
 - git.
-- For live runs, an [OpenRouter](https://openrouter.ai) key. A [TypeSafe](https://console.typesafe.ai) key for Jev is optional.
-- For delivery with a real agent, the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI, signed in, on your `PATH`.
+- For live runs, an [OpenRouter](https://openrouter.ai) key, the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI signed in on your `PATH`, or both. [Model backends](#model-backends) explains how to choose. A [TypeSafe](https://console.typesafe.ai) key for Jev is optional.
+- For delivery with a real agent, the Claude Code CLI.
 
 ## Quick start
 
@@ -58,6 +58,8 @@ Without `--yes`, each human gate asks you in the terminal. The mocks are test do
    ```bash
    cp .env.example .env
    ```
+
+   To try it without an OpenRouter key, skip this step and add `--claude-code` to the commands below. Every model call then runs on your local Claude Code.
 
 2. Add a shell alias, so you can run `flows` from any project folder:
 
@@ -98,9 +100,33 @@ Every command also takes these options:
 
 - `--artifacts <dir>` reads `.flows.yaml`, `docs/` and `plan/` from a separate workspace. Use it for client repos that shouldn't carry your files.
 - `--offline` swaps every model and judge for mocks. Setting `FLOWS_OFFLINE=1` does the same.
+- `--claude-code` runs every model role on your local Claude Code, so the run needs no OpenRouter key. Setting `FLOWS_CLAUDE_CODE=1` does the same.
 - `--yes` accepts the first option at every gate.
 
 > **Warning:** `flows plan --write` writes `docs/prd.md`, `docs/adr/*.md` and `plan/tasks.yaml` straight into the artifacts folder and replaces files with the same names. Run without `--write` first and read the proposal.
+
+## Model backends
+
+Each model role (`planner`, `reviewer`, `judge` and `implementer`) picks its backend by its model ID in `.flows.yaml`:
+
+- An OpenRouter slug, such as `openai/gpt-5.5`, goes through OpenRouter with `OPENROUTER_API_KEY`.
+- `claude-code/<model>`, such as `claude-code/opus`, runs the `claude` CLI on your machine with its own sign-in. `claude-code/default` lets Claude Code pick the model.
+
+You can mix them. This config keeps the reviewer on another vendor through OpenRouter and runs everything else locally:
+
+```yaml
+models:
+  default: claude-code/sonnet
+  implementer: claude-code/opus
+  reviewer: openai/gpt-5.5
+  judge: claude-code/haiku
+```
+
+The run asks for `OPENROUTER_API_KEY` only when at least one role uses OpenRouter. The first line of each run names the judge and the backends, for example `judge llm · models openrouter+claude-code`.
+
+OpenRouter gives you models from every vendor with one key, which matters because the reviewer should differ from the implementer. It also applies `openrouter.provider` to every call. Claude Code costs nothing beyond your Claude plan and needs no key, but every role on it runs on Anthropic models. It is also slower: each call starts a new `claude` process, about two seconds before the model starts. Jev is separate from both and always calls TypeSafe directly.
+
+[docs/configuration.md](docs/configuration.md#models) covers the details.
 
 ## Layout
 

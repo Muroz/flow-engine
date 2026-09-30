@@ -38,7 +38,7 @@ You see the flow at most three times: the plan, only when it is risky; an escala
 - **`diff-file`**, the default, replays the diff from `--diff-file` (or `git diff --base...--head`) on every attempt. The sample flow and the tests use it, and `--offline` always does.
 - **`claude-code`** runs Claude Code headless in a git worktree on branch `flows/<task>`. The code is in `src/agents/claude-code.ts`, and [docs/wiring.md](../../docs/wiring.md#3-coding-agent) explains how to turn it on.
 
-With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
+With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. A `claude-code/<model>` value in `models.implementer` picks its model. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
 
 ## Run output
 

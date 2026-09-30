@@ -1,6 +1,6 @@
 # @flows/cli
 
-The `flows` command. It loads `.env` from the engine root, builds the dependencies for a run, starts a flow and asks you at each gate.
+The `flows` command. It loads `.env` from the engine root, builds the dependencies for a run, starts a flow and asks you at each gate. The first line of each run names the judge and the model backends it calls, for example `judge llm · models claude-code`.
 
 From the engine root, run it with `pnpm flows <command>`. To run it from any folder, add an alias:
 
