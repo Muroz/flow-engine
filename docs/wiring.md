@@ -8,7 +8,7 @@ Work through these stages in order. Each one works on its own, so you can stop a
 | 1. Keys and a real review | AI code review on any branch, yours or a client's, through OpenRouter, local Claude Code or both | 30 minutes |
 | 2. Review in CI | A review on every PR, posted as a comment | 1 hour |
 | 3. Coding agent | Delivery writes code in a worktree per task | 30 minutes |
-| 4. Persistent runs and remote gates | Runs that survive restarts, and approvals from your phone | Half a day, not built yet |
+| 4. Persistent runs and remote gates | Runs that survive restarts, which is built, and approvals from your phone, which isn't | Half a day for the remote part |
 | 5. Close the loop | PRs, a work queue, tracing and evals | Ongoing, not built yet |
 
 ## 0. Verify
@@ -214,30 +214,12 @@ To use a different agent, replace `runClaudeCode` in `packages/delivery/src/agen
 
 ## 4. Persistent runs and gates away from the terminal
 
-This stage isn't built yet. Today a gate blocks the CLI process, because the graphs use `MemorySaver` and the terminal driver reads your answer with readline. To approve from your phone, you would need three changes:
+Saved runs are built. The planning and delivery graphs save every step to `runs/checkpoints.db`. At any gate you can choose `pause`, and `flows resume <run id>` picks the run up later, even after a restart. [Answering gates](../packages/cli/README.md#answering-gates) covers `back`, `pause` and the other choices.
 
-1. **Persist checkpoints.** Add the SQLite checkpointer to each flow that has gates:
+Gates away from the terminal aren't built yet. A gate still waits for an answer typed in the terminal. To approve from your phone, you would need two more changes:
 
-   ```bash
-   pnpm --filter @flows/delivery --filter @flows/planning add @langchain/langgraph-checkpoint-sqlite
-   ```
-
-   Then compile the graphs with it:
-
-   ```ts
-   import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
-   .compile({ checkpointer: SqliteSaver.fromConnString(join(ENGINE_ROOT, "runs", "checkpoints.db")) })
-   ```
-
-2. **Split `drive` into start and resume.** At a gate, save the `GateRequest`, notify yourself and exit. Add a resume command:
-
-   ```
-   flows resume <run id> --decision approve [--notes "..."]
-   ```
-
-   It calls `graph.invoke(new Command({ resume }), { configurable: { thread_id: runId } })`.
-
-3. **Send the notification** through whatever reaches you: ntfy.sh, Slack or a chat bot you already run. Map a reply such as "approve T-002" to `flows resume`.
+1. **Answer a gate without the terminal.** Add a command that takes the decision as arguments, such as `flows resume <run id> --decision approve --notes "..."`. It resumes the graph with `graph.invoke(new Command({ resume: { decision, notes } }), { configurable: { thread_id: runId } })` and stops at the next gate.
+2. **Send a notification** when a run pauses at a gate, through whatever reaches you: ntfy.sh, Slack or a chat bot you already run. Map a reply such as "approve T-002" to that command.
 
 The graphs themselves don't change. That is the point of the `GateRequest` and `GateDecision` types in `packages/core/src/gates.ts`.
 

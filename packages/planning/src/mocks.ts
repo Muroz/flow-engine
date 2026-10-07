@@ -1,5 +1,20 @@
 import { MockJudge, MockModelClient, type FlowDeps } from "@flows/core";
 
+const REQUIREMENTS = [
+  { id: "R-1", title: "Start a return within the window", text: "Customers can start a return for an eligible order within the return window.", area: "Returns", priority: "mvp" },
+  { id: "R-2", title: "Choose items and reasons", text: "Customers choose items and a reason for each.", area: "Returns", priority: "mvp" },
+  { id: "R-3", title: "Get a printable label", text: "Customers receive a printable shipping label.", area: "Labels", priority: "mvp" },
+  { id: "R-4", title: "Staff approve or reject returns", text: "Support staff can review pending returns and approve or reject them.", area: "Support", priority: "mvp" },
+  { id: "R-5", title: "Email updates on return status", text: "Customers get an email when their return changes status.", area: "Support", priority: "later" },
+];
+
+const option = (pitch: string, firstDelivery: string, monthlyCost: string, opsBurden: string, lockIn: string, summary: string, tradeoffs: string[]) => ({
+  pitch,
+  facts: { firstDelivery, monthlyCost, opsBurden, lockIn },
+  summary,
+  tradeoffs,
+});
+
 /** Offline stand-ins for the planning flow. Shaped so the loops actually run once. */
 export function registerPlanningMocks(deps: FlowDeps): void {
   if (deps.model instanceof MockModelClient) {
@@ -15,24 +30,27 @@ export function registerPlanningMocks(deps: FlowDeps): void {
             ],
           });
         case "planning.requirements":
+          return JSON.stringify({ requirements: REQUIREMENTS });
+        case "planning.reviseRequirements":
+          // Pretends the notes asked for one new requirement.
           return JSON.stringify({
             requirements: [
-              { id: "R-1", text: "Customers can start a return for an eligible order within the return window." },
-              { id: "R-2", text: "Customers choose items and a reason for each." },
-              { id: "R-3", text: "Customers receive a printable shipping label." },
-              { id: "R-4", text: "Support staff can review pending returns and approve or reject them." },
+              ...REQUIREMENTS,
+              { id: "R-6", title: "Customers see return status", text: "Customers can see whether their return is pending, approved or rejected.", area: "Returns", priority: "mvp" },
             ],
           });
         case "planning.option": {
           const angle = req.user.match(/ANGLE: (.*)/)?.[1] ?? "";
           return JSON.stringify(
             angle.startsWith("simplest")
-              ? { summary: "Extend the existing API with a returns module and Postgres tables; labels via the carrier's REST API.", tradeoffs: ["Fastest to ship", "Carrier coupling in our code"] }
+              ? option("Add a returns module to the existing API.", "2 weeks", "about $0 extra", "low", "low", "Extend the existing API with a returns module and Postgres tables; labels via the carrier's REST API.", ["Fastest to ship", "Carrier coupling in our code"])
               : angle.startsWith("built")
-                ? { summary: "Separate returns service with an event bus between orders, returns and labels.", tradeoffs: ["Scales independently", "Much more infrastructure for a small client"] }
-                : { summary: "Use a hosted returns platform and integrate via webhooks.", tradeoffs: ["Least code", "Monthly fee and less control over UX"] },
+                ? option("Run returns as its own service.", "6 weeks", "about $150", "high", "low", "Separate returns service with an event bus between orders, returns and labels.", ["Scales independently", "Much more infrastructure for a small client"])
+                : option("Use a hosted returns platform.", "1 week", "about $300", "low", "high", "Use a hosted returns platform and integrate via webhooks.", ["Least code", "Monthly fee and less control over UX"]),
           );
         }
+        case "planning.adjustOption":
+          return JSON.stringify(option("Add a returns module, with labels from a second carrier.", "3 weeks", "about $0 extra", "low", "low", "Same as before, with a second carrier behind the adapter.", ["Carrier choice", "One more integration to test"]));
         case "planning.compare":
           return JSON.stringify({ recommended: "A", why: "Smallest change to a stack the client already runs; the scale option is premature." });
         case "planning.adrs":

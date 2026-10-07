@@ -7,6 +7,8 @@
  *   flows plan    --repo <dir> --brief brief.md [--write]
  *   flows tasks   --repo <dir> [--done T-001,T-002]
  *   flows explain --repo <dir> --task T-002 [--diff-file f | --base main --head HEAD]
+ *   flows runs    [--repo <dir>]          paused runs
+ *   flows resume  <run id>                pick a paused run up at its gate
  *
  * Common: [--artifacts <dir>] (shadow workspace) [--offline] [--claude-code] (every model on local Claude Code)
  *         [--yes] (auto-approve gates)
@@ -41,7 +43,8 @@ import {
 } from "@flows/delivery";
 import { buildPlanningGraph, registerPlanningMocks, type PlanningState } from "@flows/planning";
 import { registerReviewMocks, runReview } from "@flows/review";
-import { drive } from "./drive";
+import { drive, type DriveResult } from "./drive";
+import { checkpointer, findRun, openRuns, saveRun, type RunRecord } from "./runs";
 
 // Load .env from the engine root if present (Node ≥ 20.12).
 const envFile = resolve(ENGINE_ROOT, ".env");
@@ -65,13 +68,34 @@ const { positionals, values: args } = parseArgs({
   },
 });
 
-const command = positionals[0];
+let command = positionals[0];
+let here = process.env.INIT_CWD ?? process.cwd();
+let resumed: RunRecord | undefined;
+
+if (command === "runs") {
+  const project = args.repo ? loadConfig(resolve(here, args.repo), args.artifacts && resolve(here, args.artifacts)).project : undefined;
+  const runs = openRuns(project);
+  if (!runs.length) console.log("No paused runs.");
+  for (const r of runs) console.log(`${r.runId}  ${r.project}  ${r.status}${r.gate ? ` at ${r.gate}` : ""}`);
+  process.exit(0);
+}
+
+if (command === "resume") {
+  resumed = positionals[1] ? findRun(positionals[1]) : undefined;
+  if (!resumed) {
+    console.error(`usage: flows resume <run id>. ${positionals[1] ? `No run ${positionals[1]} under runs/.` : "flows runs lists paused runs."}`);
+    process.exit(1);
+  }
+  Object.assign(args, resumed.args);
+  command = resumed.command;
+  here = resumed.here;
+}
+
 if (!command || !args.repo) {
-  console.error("usage: flows <review|deliver|plan|tasks|explain> --repo <dir> [options]  (see packages/cli/src/index.ts)");
+  console.error("usage: flows <review|deliver|plan|tasks|explain|runs|resume> --repo <dir> [options]  (see packages/cli/src/index.ts)");
   process.exit(1);
 }
 
-const here = process.env.INIT_CWD ?? process.cwd();
 const abs = (p: string | undefined) => (p === undefined ? undefined : resolve(here, p));
 const config = loadConfig(abs(args.repo)!, abs(args.artifacts));
 
@@ -97,7 +121,28 @@ if (args.task && !task) {
 }
 
 const models = deps.offline ? " · OFFLINE (mocks)" : ` · models ${deps.backends.join("+") || "none"}`;
-console.log(`▶ ${command} · project ${config.project} · judge ${deps.judge.name}${models}\n`);
+console.log(`▶ ${resumed ? "resume " : ""}${command} · project ${config.project} · judge ${deps.judge.name}${models}\n`);
+
+/**
+ * Runs a gated graph with saved checkpoints. Returns the final state, or
+ * undefined when you paused, after recording how to resume.
+ */
+async function runGated<S>(graph: Parameters<typeof drive>[0], input: unknown, runId: string): Promise<S | undefined> {
+  const dir = runDir(config, runId);
+  const record = { runId, project: config.project, command: command!, args, here };
+  saveRun(dir, { ...record, status: "running" });
+  const result: DriveResult<S> = await drive<S>(graph, resumed ? undefined : input, runId, {
+    yes: args.yes!,
+    gateStack: resumed?.gateStack,
+  });
+  if (result.status === "paused") {
+    saveRun(dir, { ...record, status: "paused", gate: result.gate.gate, gateStack: result.gateStack });
+    console.log(`\n⏸ paused at ${result.gate.gate}. Resume with: flows resume ${runId}`);
+    return undefined;
+  }
+  saveRun(dir, { ...record, status: "done" });
+  return result.values;
+}
 
 switch (command) {
   case "review": {
@@ -113,9 +158,10 @@ switch (command) {
 
   case "deliver": {
     if (!task) throw new Error("deliver needs --task");
-    const runId = newRunId(`deliver-${task.id}`);
-    const graph = buildDeliveryGraph(deps);
-    const final = await drive<DeliveryState>(graph, { task, diffSource, base: args.base!, runId }, runId, { yes: args.yes });
+    const runId = resumed?.runId ?? newRunId(`deliver-${task.id}`);
+    const graph = buildDeliveryGraph(deps, { checkpointer: checkpointer() });
+    const final = await runGated<DeliveryState>(graph, { task, diffSource, base: args.base!, runId }, runId);
+    if (!final) break;
     writeRunFile(runDir(config, runId), "state.json", JSON.stringify(final, null, 2));
     if (final.review?.report) writeRunFile(runDir(config, runId), "review.md", final.review.report);
     console.log(`\n■ outcome: ${final.outcome} after ${final.attempts} attempt(s) · cost $${totalCost(final.log).toFixed(4)}`);
@@ -126,9 +172,14 @@ switch (command) {
 
   case "plan": {
     if (!args.brief) throw new Error("plan needs --brief <file>");
-    const runId = newRunId("plan");
-    const graph = buildPlanningGraph(deps, { outDir: args.write ? config.artifactsDir : resolve(runDir(config, runId), "proposed") });
-    const final = await drive<PlanningState>(graph, { briefPath: abs(args.brief)! }, runId, { yes: args.yes });
+    const runId = resumed?.runId ?? newRunId("plan");
+    const graph = buildPlanningGraph(deps, {
+      outDir: args.write ? config.artifactsDir : resolve(runDir(config, runId), "proposed"),
+      detailDir: runDir(config, runId),
+      checkpointer: checkpointer(),
+    });
+    const final = await runGated<PlanningState>(graph, { briefPath: abs(args.brief)! }, runId);
+    if (!final) break;
     writeRunFile(runDir(config, runId), "state.json", JSON.stringify(final, null, 2));
     console.log(`\n■ planning ${final.emitted?.length ? "emitted" : "stopped"} · cost $${totalCost(final.log).toFixed(4)}`);
     for (const p of final.emitted ?? []) console.log(`  📄 ${p}`);

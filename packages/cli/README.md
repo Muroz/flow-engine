@@ -12,12 +12,28 @@ The CLI resolves `--repo`, `--artifacts`, `--diff-file` and `--brief` against th
 
 The [root README](../../README.md#commands) lists the commands and options.
 
+## Answering gates
+
+At each gate, the CLI prints a short summary and a numbered list of choices. Type a choice or its number. An empty line never counts as an answer, so a stray Enter does nothing.
+
+- **`back`** reopens the previous gate. Everything after it runs again, so its model calls cost again. In delivery, the code the agent already wrote stays in the worktree.
+- **`pause`** saves the run and exits. `flows resume <run id>` picks it up at the same gate, even after a restart.
+- **`discard`, `reject` and `abort`** ask you to confirm.
+- **`revise` and `adjust`** need notes and ask until you give some.
+
+While the graph runs, the CLI prints one line per finished step, with its time, cost and a short note. On a terminal, a counter shows how long the current step has been running.
+
+`flows runs` lists paused runs. Add `--repo <dir>` to list only that project's runs.
+
+The CLI saves every planning and delivery run to `runs/checkpoints.db`, and writes `run.json` in the run folder with what `resume` needs. Both are under `runs/`, which git ignores.
+
 ## Files
 
 | File | What it does |
 |---|---|
 | `src/index.ts` | Parses arguments, loads the config, picks the flow and writes run output. |
-| `src/drive.ts` | Runs a checkpointed graph to the end. At each `interrupt()`, it shows the `GateRequest`, reads your decision and resumes the graph with `Command({ resume })`. With `--yes`, it picks the first option. |
+| `src/drive.ts` | Runs a checkpointed graph to the end and prints progress. At each `interrupt()`, it shows the `GateRequest`, reads your decision and resumes the graph with `Command({ resume })`. It handles `back` by forking the run from the previous gate's checkpoint. With `--yes`, it picks the first option. |
+| `src/runs.ts` | Reads and writes `run.json`, lists paused runs and opens the checkpoint database. |
 
 `drive` is the only part that knows about the terminal. To answer gates from Slack or a phone instead, replace `drive` and leave the graphs alone. [docs/wiring.md](../../docs/wiring.md#4-persistent-runs-and-gates-away-from-the-terminal) sketches how.
 

@@ -49,7 +49,7 @@ pnpm deliver:sample --yes  # plan, risk, implement, checks, review loop, stop ru
 pnpm plan:sample --yes     # brief, questions, scope, three architectures, ADRs, tasks
 ```
 
-Without `--yes`, each human gate asks you in the terminal. The mocks are test doubles, not reviewers. They exist so you can watch every node and edge run.
+Without `--yes`, each human gate asks you in the terminal. Every gate also offers `back`, to reopen the previous gate, and `pause`, to save the run and finish it later with `flows resume`. The mocks are test doubles, not reviewers. They exist so you can watch every node and edge run.
 
 ## Use it on your own project
 
@@ -95,6 +95,8 @@ Without `--yes`, each human gate asks you in the terminal. The mocks are test do
 | `flows deliver --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Takes one task from plan to merge gate. `delivery.agent` in `.flows.yaml` picks who writes the code. |
 | `flows plan --repo <dir> --brief <file> [--write]` | Turns a brief into a PRD, ADRs and tasks. Writes a proposal under `runs/` unless you pass `--write`. |
 | `flows tasks --repo <dir> [--done T-001,T-002]` | Prints the task list and marks which tasks are ready to start. Needs no keys. |
+| `flows runs [--repo <dir>]` | Lists paused runs. |
+| `flows resume <run id>` | Picks a paused run up at the gate where you paused it. |
 | `flows explain --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Writes a plain-language walkthrough of a task's changes. Delivery writes one before every merge gate; use this for work you want explained again. |
 
 Every command also takes these options:

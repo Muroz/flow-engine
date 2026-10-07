@@ -24,12 +24,15 @@ import {
   type GateRequest,
   type PlannedTask,
 } from "@flows/core";
-import { END, interrupt } from "@langchain/langgraph";
-import type { ArchOption, DraftAdr, PlanningState, PlanningUpdate, Requirement } from "./state";
+import { END, interrupt, Send } from "@langchain/langgraph";
+import type { ArchFacts, ArchOption, DraftAdr, PlanningState, PlanningUpdate, Requirement } from "./state";
+import { archDetail, archSummary, mvp, parseAdjust, planDetail, planSummary, scopeDetail, scopeSummary } from "./summaries";
 
 const gate = (req: GateRequest) => interrupt(req) as GateDecision;
 const bullets = (xs: string[]) => xs.map((x) => `- ${x}`).join("\n");
 const reqList = (rs: Requirement[]) => rs.map((r) => `- ${r.id}: ${r.text}`).join("\n");
+const fullReqList = (rs: Requirement[]) =>
+  rs.map((r) => `- ${r.id} [${r.priority}] [${r.area}] ${r.title}: ${r.text}`).join("\n");
 
 /** Lenses for the architecture fan-out. Diversity comes from the angle — and from using different models per angle if you like. */
 export const ARCH_ANGLES = [
@@ -97,30 +100,50 @@ export const clarify = async (s: PlanningState): Promise<PlanningUpdate> => {
 export const writeRequirements =
   (deps: FlowDeps) =>
   async (s: PlanningState): Promise<PlanningUpdate> => {
+    // With feedback on an existing list, edit that list instead of starting over.
+    const revising = s.requirements.length > 0 && !!s.scopeFeedback;
     const res = await deps.model.complete({
-      tag: "planning.requirements",
+      tag: revising ? "planning.reviseRequirements" : "planning.requirements",
       model: modelFor(deps.config, "planner"),
       json: true,
       system: "You are a product-minded senior engineer writing crisp, testable requirements.",
-      user: render(loadPrompt("planning/requirements"), { brief: s.brief }),
+      user: revising
+        ? render(loadPrompt("planning/revise-requirements"), { requirements: fullReqList(s.requirements), feedback: s.scopeFeedback! })
+        : render(loadPrompt("planning/requirements"), { brief: s.brief }),
     });
-    const { requirements = [] } = parseJsonReply<{ requirements?: Requirement[] }>(res.text, {});
-    return { requirements, log: [logEntry("planning.requirements", { model: res.model, costUsd: res.costUsd, note: `${requirements.length} requirements` })] };
+    const { requirements = [] } = parseJsonReply<{ requirements?: Partial<Requirement>[] }>(res.text, {});
+    const parsed = requirements.map(asRequirement);
+    return {
+      requirements: parsed,
+      previousRequirements: revising ? s.requirements : [],
+      scopeFeedback: undefined,
+      log: [
+        logEntry(revising ? "planning.reviseRequirements" : "planning.requirements", {
+          model: res.model,
+          costUsd: res.costUsd,
+          note: `${parsed.length} requirements (${mvp(parsed).length} MVP)`,
+        }),
+      ],
+    };
   };
 
-export const approveScope = async (s: PlanningState): Promise<PlanningUpdate> => {
-  const d = gate({
-    gate: "approve-scope",
-    title: `Approve scope (${s.requirements.length} requirements)`,
-    summary: reqList(s.requirements),
-    options: ["approve", "revise", "stop"],
-  });
-  return {
-    scopeDecision: d.decision as PlanningState["scopeDecision"],
-    brief: d.decision === "revise" && d.notes ? `${s.brief}\n\n## Scope feedback\n${d.notes}` : s.brief,
-    log: [logEntry("planning.approveScope", { note: d.decision })],
+export const approveScope =
+  (detailDir: string) =>
+  async (s: PlanningState): Promise<PlanningUpdate> => {
+    const detailPath = writeRunFile(detailDir, "scope.md", scopeDetail(s.requirements));
+    const d = gate({
+      gate: "approve-scope",
+      title: `Approve scope: ${mvp(s.requirements).length} MVP requirements, ${s.requirements.length - mvp(s.requirements).length} later`,
+      summary: scopeSummary(s.requirements, s.previousRequirements),
+      options: ["approve", "revise", "discard"],
+      detailPath,
+    });
+    return {
+      scopeDecision: d.decision as PlanningState["scopeDecision"],
+      scopeFeedback: d.decision === "revise" ? d.notes : undefined,
+      log: [logEntry("planning.approveScope", { note: d.decision })],
+    };
   };
-};
 
 // ── architecture (fan-out) ──────────────────────────────────────────────────
 
@@ -132,51 +155,83 @@ export const proposeOption =
       model: modelFor(deps.config, "planner"), // try a different model per angle for real diversity
       json: true,
       system: "You are a pragmatic software architect.",
-      user: render(loadPrompt("planning/option"), { angle: s.currentAngle, requirements: reqList(s.requirements), brief: s.brief }),
+      user: render(loadPrompt("planning/option"), {
+        angle: s.currentAngle,
+        requirements: reqList(mvp(s.requirements)),
+        brief: s.brief,
+        feedback: s.archFeedback ?? "(none)",
+      }),
     });
-    const o = parseJsonReply<{ summary?: string; tradeoffs?: string[] }>(res.text, {});
     const id = String.fromCharCode(65 + ARCH_ANGLES.indexOf(s.currentAngle ?? ""));
     return {
-      options: [{ id, angle: s.currentAngle ?? "", summary: o.summary ?? "", tradeoffs: o.tradeoffs ?? [] }],
+      options: [asOption(parseJsonReply(res.text, {}), id, s.currentAngle ?? "")],
       log: [logEntry(`planning.option.${id}`, { model: res.model, costUsd: res.costUsd })],
+    };
+  };
+
+export const adjustOption =
+  (deps: FlowDeps) =>
+  async (s: PlanningState): Promise<PlanningUpdate> => {
+    const target = s.options.find((o) => o.id === s.adjustTarget) ?? s.options[0]!;
+    const res = await deps.model.complete({
+      tag: "planning.adjustOption",
+      model: modelFor(deps.config, "planner"),
+      json: true,
+      system: "You are a pragmatic software architect.",
+      user: render(loadPrompt("planning/adjust-option"), {
+        option: JSON.stringify(target, null, 2),
+        feedback: s.archFeedback ?? "",
+        requirements: reqList(mvp(s.requirements)),
+      }),
+    });
+    return {
+      options: [asOption(parseJsonReply(res.text, {}), target.id, target.angle)],
+      archFeedback: undefined,
+      log: [logEntry(`planning.adjust.${target.id}`, { model: res.model, costUsd: res.costUsd })],
     };
   };
 
 export const compareOptions =
   (deps: FlowDeps) =>
   async (s: PlanningState): Promise<PlanningUpdate> => {
-    const options = [...s.options].sort((a, b) => a.id.localeCompare(b.id));
     const res = await deps.model.complete({
       tag: "planning.compare",
       model: modelFor(deps.config, "reviewer"), // a different model judges the options
       json: true,
       system: "You are a principal engineer choosing between architecture options for a small team.",
       user: render(loadPrompt("planning/compare"), {
-        requirements: reqList(s.requirements),
-        options: options.map((o) => `### Option ${o.id} (${o.angle})\n${o.summary}\nTrade-offs:\n${bullets(o.tradeoffs)}`).join("\n\n"),
+        requirements: reqList(mvp(s.requirements)),
+        options: s.options
+          .map((o) => `### Option ${o.id} (${o.angle})\n${o.pitch}\n${o.summary}\nFacts: ${JSON.stringify(o.facts)}\nTrade-offs:\n${bullets(o.tradeoffs)}`)
+          .join("\n\n"),
       }),
     });
     const { recommended = "A", why = "" } = parseJsonReply<{ recommended?: string; why?: string }>(res.text, {});
-    // Don't return `options` here: its reducer is concat, so it would duplicate them.
     return { recommendation: `${recommended}: ${why}`, log: [logEntry("planning.compare", { model: res.model, costUsd: res.costUsd, note: `recommends ${recommended}` })] };
   };
 
-export const pickArchitecture = async (s: PlanningState): Promise<PlanningUpdate> => {
-  const rec = s.recommendation?.split(":")[0] ?? "A";
-  const ids = [rec, ...s.options.map((o) => o.id).filter((id) => id !== rec)];
-  const d = gate({
-    gate: "pick-architecture",
-    title: "Pick an architecture",
-    summary: [
-      ...s.options.map((o) => `${o.id} — ${o.angle}\n   ${o.summary}`),
-      "",
-      `Recommended: ${s.recommendation}`,
-    ].join("\n"),
-    options: [...ids, "stop"],
-  });
-  const chosen = s.options.find((o) => o.id === d.decision);
-  return { chosen, log: [logEntry("planning.pickArchitecture", { note: d.decision })] };
-};
+export const pickArchitecture =
+  (detailDir: string) =>
+  async (s: PlanningState): Promise<PlanningUpdate> => {
+    const rec = s.recommendation?.split(":")[0] ?? "A";
+    const ids = s.options.map((o) => o.id);
+    const detailPath = writeRunFile(detailDir, "architecture.md", archDetail(s.options, s.recommendation));
+    const d = gate({
+      gate: "pick-architecture",
+      title: "Pick an architecture",
+      summary: archSummary(s.options, s.recommendation),
+      options: [rec, ...ids.filter((id) => id !== rec), "revise", "adjust", "discard"],
+      detailPath,
+    });
+    const log = [logEntry("planning.pickArchitecture", { note: d.decision })];
+    if (d.decision === "revise") return { archDecision: "revise", archFeedback: d.notes, log };
+    if (d.decision === "adjust") {
+      const { target, notes } = parseAdjust(d.notes ?? "", ids, rec);
+      return { archDecision: "adjust", adjustTarget: target, archFeedback: notes, log };
+    }
+    const chosen = s.options.find((o) => o.id === d.decision);
+    return { archDecision: chosen ? "pick" : "discard", chosen, log };
+  };
 
 // ── ADRs & breakdown ────────────────────────────────────────────────────────
 
@@ -190,7 +245,7 @@ export const writeAdrs =
       system: "You write short Architecture Decision Records.",
       user: render(loadPrompt("planning/adrs"), {
         chosen: `${s.chosen!.summary}\nTrade-offs:\n${bullets(s.chosen!.tradeoffs)}`,
-        requirements: reqList(s.requirements),
+        requirements: reqList(mvp(s.requirements)),
       }),
     });
     const { adrs = [] } = parseJsonReply<{ adrs?: Omit<DraftAdr, "id">[] }>(res.text, {});
@@ -210,7 +265,7 @@ export const breakdown =
       json: true,
       system: "You break projects into small, independently reviewable tasks with explicit dependencies.",
       user: render(loadPrompt("planning/breakdown"), {
-        requirements: reqList(s.requirements),
+        requirements: reqList(mvp(s.requirements)),
         adrs: s.adrs.map((a) => `${a.id}: ${a.title} — ${a.decision}`).join("\n"),
         previous: s.tasks.length ? JSON.stringify(s.tasks) : "(none)",
         gaps: gaps.length ? `GAPS — these requirements are not covered yet: ${gaps.join(", ")}` : "",
@@ -233,8 +288,9 @@ export const breakdown =
 export const checkCoverage =
   (deps: FlowDeps) =>
   async (s: PlanningState): Promise<PlanningUpdate> => {
+    const scope = mvp(s.requirements);
     const questions = Object.fromEntries(
-      s.requirements.map((r) => [
+      scope.map((r) => [
         r.id.replace(/\W/g, "_"),
         noul(`Is requirement ${r.id} ("${r.text}") fully delivered by these tasks' acceptance criteria?`),
       ]),
@@ -242,10 +298,10 @@ export const checkCoverage =
     const answers = await deps.judge.ask({ tasks: s.tasks.map(({ id, title, requirementIds, acceptanceCriteria }) => ({ id, title, requirementIds, acceptanceCriteria })) }, questions);
 
     // Deterministic half: every task must trace back to a real requirement.
-    const known = new Set(s.requirements.map((r) => r.id));
+    const known = new Set(scope.map((r) => r.id));
     const orphans = s.tasks.filter((t) => !t.requirementIds.some((id) => known.has(id))).map((t) => t.id);
 
-    const coverage = s.requirements.map((r) => {
+    const coverage = scope.map((r) => {
       const p = (answers as Record<string, { p: number }>)[r.id.replace(/\W/g, "_")]?.p ?? 0;
       return { requirementId: r.id, p, covered: p >= 0.6 };
     });
@@ -256,22 +312,20 @@ export const checkCoverage =
     };
   };
 
-export const approvePlan = async (s: PlanningState): Promise<PlanningUpdate> => {
-  const gaps = s.coverage.filter((c) => !c.covered).map((c) => c.requirementId);
-  const d = gate({
-    gate: "approve-plan",
-    title: `Approve plan: ${s.tasks.length} tasks, ${s.adrs.length} ADRs`,
-    summary: [
-      `Architecture: ${s.chosen?.id} — ${s.chosen?.angle}`,
-      ...s.adrs.map((a) => `${a.id}: ${a.title}`),
-      "",
-      ...s.tasks.map((t) => `${t.id} [${t.risk}] ${t.title}${t.dependsOn.length ? `  ← ${t.dependsOn.join(", ")}` : ""}`),
-      ...(gaps.length ? ["", `⚠ still uncovered: ${gaps.join(", ")}`] : []),
-    ].join("\n"),
-    options: ["approve", "stop"],
-  });
-  return { planApproved: d.decision === "approve", log: [logEntry("planning.approvePlan", { note: d.decision })] };
-};
+export const approvePlan =
+  (detailDir: string) =>
+  async (s: PlanningState): Promise<PlanningUpdate> => {
+    const gaps = s.coverage.filter((c) => !c.covered).map((c) => c.requirementId);
+    const detailPath = writeRunFile(detailDir, "plan.md", planDetail(s.tasks));
+    const d = gate({
+      gate: "approve-plan",
+      title: `Approve plan: ${s.tasks.length} tasks, ${s.adrs.length} ADRs`,
+      summary: planSummary(s.chosen, s.adrs, s.tasks, gaps),
+      options: ["approve", "discard"],
+      detailPath,
+    });
+    return { planApproved: d.decision === "approve", log: [logEntry("planning.approvePlan", { note: d.decision })] };
+  };
 
 // ── emit ────────────────────────────────────────────────────────────────────
 
@@ -284,7 +338,10 @@ export const emit = (outDir: string) => async (s: PlanningState): Promise<Planni
     s.brief ?? "",
     "",
     "## Requirements",
-    reqList(s.requirements),
+    reqList(mvp(s.requirements)),
+    "",
+    "## Later",
+    reqList(s.requirements.filter((r) => r.priority === "later")) || "(none)",
     "",
     "## Architecture",
     `${s.chosen?.summary ?? ""}`,
@@ -301,7 +358,45 @@ export const emit = (outDir: string) => async (s: PlanningState): Promise<Planni
 // ── routing ─────────────────────────────────────────────────────────────────
 
 export const afterAssess = (s: PlanningState) => (s.briefComplete || s.discoveryRounds >= 2 ? "writeRequirements" : "askQuestions");
-export const afterPick = (s: PlanningState) => (s.chosen ? "writeAdrs" : END);
+export const afterPick = (s: PlanningState) => {
+  if (s.archDecision === "pick" && s.chosen) return "writeAdrs";
+  if (s.archDecision === "adjust") return "adjustOption";
+  if (s.archDecision === "revise") return proposeAll(s);
+  return END;
+};
+
+/** One `proposeOption` branch per angle. */
+export const proposeAll = (s: PlanningState) => ARCH_ANGLES.map((angle) => new Send("proposeOption", { ...s, currentAngle: angle }));
+
+export const afterScope = (s: PlanningState) => {
+  if (s.scopeDecision === "approve") return proposeAll(s);
+  return s.scopeDecision === "revise" ? "writeRequirements" : END;
+};
+
+/** Models leave fields out; fill them so gates never print "undefined". */
+export function asRequirement(r: Partial<Requirement>, i: number): Requirement {
+  const text = String(r.text ?? "");
+  return {
+    id: String(r.id ?? `R-${i + 1}`),
+    title: String(r.title ?? text.split(/[.:]/)[0]!.split(/\s+/).slice(0, 8).join(" ")),
+    text,
+    area: String(r.area ?? "General"),
+    priority: r.priority === "later" ? "later" : "mvp",
+  };
+}
+
+export function asOption(o: Omit<Partial<ArchOption>, "facts"> & { facts?: Partial<ArchFacts> }, id: string, angle: string): ArchOption {
+  const f: Partial<ArchFacts> = o.facts ?? {};
+  const fact = (x: unknown) => String(x ?? "?");
+  return {
+    id,
+    angle,
+    pitch: String(o.pitch ?? o.summary?.split(". ")[0] ?? ""),
+    facts: { firstDelivery: fact(f.firstDelivery), monthlyCost: fact(f.monthlyCost), opsBurden: fact(f.opsBurden), lockIn: fact(f.lockIn) },
+    summary: String(o.summary ?? ""),
+    tradeoffs: Array.isArray(o.tradeoffs) ? o.tradeoffs.map(String) : [],
+  };
+}
 export const afterCoverage = (s: PlanningState) =>
   s.coverage.some((c) => !c.covered) && s.breakdownRounds < 2 ? "breakdown" : "approvePlan";
 export const afterPlanGate = (s: PlanningState) => (s.planApproved ? "emit" : END);

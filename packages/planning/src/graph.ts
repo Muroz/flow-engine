@@ -9,24 +9,31 @@
  *                        ▲                 │ approve              │
  *                        └─────────────────┼──────────────────────┘
  *                                          ▼ (fan-out ×3 angles)
- *                  proposeOption ‖ proposeOption ‖ proposeOption
- *                                          ▼
- *                  compareOptions → pickArchitecture 🙋 → writeAdrs → breakdown ◄─┐
- *                                                                        ▼        │ gaps (max 2 rounds)
- *                                                                  checkCoverage ─┘
- *                                                                        ▼
- *                                                                  approvePlan 🙋 → emit → END
+ *                  proposeOption ‖ proposeOption ‖ proposeOption ◄──(revise)──┐
+ *                                          ▼                                  │
+ *                  compareOptions ◄── adjustOption ◄──(adjust)────────────────┤
+ *                         ▼                                                   │
+ *                  pickArchitecture 🙋 ───────────────────────────────────────┘
+ *                         ▼ pick
+ *                  writeAdrs → breakdown ◄─┐
+ *                                ▼        │ gaps (max 2 rounds)
+ *                          checkCoverage ─┘
+ *                                ▼
+ *                          approvePlan 🙋 → emit → END
+ *
+ * Only MVP requirements reach the architecture, ADR and task nodes.
  */
 import type { FlowDeps, LogEntry, PlannedTask } from "@flows/core";
-import { Annotation, END, MemorySaver, Send, START, StateGraph } from "@langchain/langgraph";
+import { Annotation, END, MemorySaver, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
 import {
+  adjustOption,
   afterAssess,
   afterCoverage,
   afterPick,
   afterPlanGate,
+  afterScope,
   approvePlan,
   approveScope,
-  ARCH_ANGLES,
   askQuestions,
   assessBrief,
   breakdown,
@@ -45,6 +52,13 @@ import type { ArchOption, Coverage, DraftAdr, PlanningState, Requirement } from 
 const concat = <T>(a: T[], b: T[]): T[] => a.concat(b);
 const last = <T>(_a: T, b: T): T => b;
 
+/** A rerun of the fan-out or an adjust replaces options by ID instead of adding copies. */
+export const mergeOptions = (a: ArchOption[], b: ArchOption[]): ArchOption[] => {
+  const byId = new Map(a.map((o) => [o.id, o]));
+  for (const o of b) byId.set(o.id, o);
+  return [...byId.values()].sort((x, y) => x.id.localeCompare(y.id));
+};
+
 export const PlanningAnnotation = Annotation.Root({
   briefPath: Annotation<string>,
   brief: Annotation<string | undefined>,
@@ -52,11 +66,16 @@ export const PlanningAnnotation = Annotation.Root({
   discoveryRounds: Annotation<number>({ reducer: last, default: () => 0 }),
   questions: Annotation<string[]>({ reducer: last, default: () => [] }),
   requirements: Annotation<Requirement[]>({ reducer: last, default: () => [] }),
+  previousRequirements: Annotation<Requirement[]>({ reducer: last, default: () => [] }),
   scopeDecision: Annotation<PlanningState["scopeDecision"]>,
-  options: Annotation<ArchOption[]>({ reducer: concat, default: () => [] }),
+  scopeFeedback: Annotation<string | undefined>,
+  options: Annotation<ArchOption[]>({ reducer: mergeOptions, default: () => [] }),
   currentAngle: Annotation<string | undefined>,
   recommendation: Annotation<string | undefined>,
   chosen: Annotation<ArchOption | undefined>,
+  archDecision: Annotation<PlanningState["archDecision"]>,
+  archFeedback: Annotation<string | undefined>,
+  adjustTarget: Annotation<string | undefined>,
   adrs: Annotation<DraftAdr[]>({ reducer: last, default: () => [] }),
   tasks: Annotation<PlannedTask[]>({ reducer: last, default: () => [] }),
   coverage: Annotation<Coverage[]>({ reducer: last, default: () => [] }),
@@ -66,27 +85,31 @@ export const PlanningAnnotation = Annotation.Root({
   log: Annotation<LogEntry[]>({ reducer: concat, default: () => [] }),
 });
 
-export function buildPlanningGraph(deps: FlowDeps, opts: { outDir: string }) {
-  // After scope approval: fan out one architecture proposal per angle.
-  const afterScope = (s: PlanningState) => {
-    if (s.scopeDecision === "approve") return ARCH_ANGLES.map((angle) => new Send("proposeOption", { ...s, currentAngle: angle }));
-    return s.scopeDecision === "revise" ? "writeRequirements" : END;
-  };
+export type PlanningGraphOptions = {
+  /** Where `emit` writes: a proposal folder, or the artifacts folder with --write. */
+  outDir: string;
+  /** Where gates write their detail files. Defaults to `outDir`. */
+  detailDir?: string;
+  checkpointer?: BaseCheckpointSaver;
+};
 
+export function buildPlanningGraph(deps: FlowDeps, opts: PlanningGraphOptions) {
+  const detailDir = opts.detailDir ?? opts.outDir;
   return new StateGraph(PlanningAnnotation)
     .addNode("intake", intake)
     .addNode("assessBrief", assessBrief(deps))
     .addNode("askQuestions", askQuestions(deps))
     .addNode("clarify", clarify)
     .addNode("writeRequirements", writeRequirements(deps))
-    .addNode("approveScope", approveScope)
+    .addNode("approveScope", approveScope(detailDir))
     .addNode("proposeOption", proposeOption(deps))
     .addNode("compareOptions", compareOptions(deps))
-    .addNode("pickArchitecture", pickArchitecture)
+    .addNode("adjustOption", adjustOption(deps))
+    .addNode("pickArchitecture", pickArchitecture(detailDir))
     .addNode("writeAdrs", writeAdrs(deps))
     .addNode("breakdown", breakdown(deps))
     .addNode("checkCoverage", checkCoverage(deps))
-    .addNode("approvePlan", approvePlan)
+    .addNode("approvePlan", approvePlan(detailDir))
     .addNode("emit", emit(opts.outDir))
     .addEdge(START, "intake")
     .addEdge("intake", "assessBrief")
@@ -97,11 +120,12 @@ export function buildPlanningGraph(deps: FlowDeps, opts: { outDir: string }) {
     .addConditionalEdges("approveScope", afterScope, ["proposeOption", "writeRequirements", END])
     .addEdge("proposeOption", "compareOptions")
     .addEdge("compareOptions", "pickArchitecture")
-    .addConditionalEdges("pickArchitecture", afterPick, ["writeAdrs", END])
+    .addConditionalEdges("pickArchitecture", afterPick, ["writeAdrs", "adjustOption", "proposeOption", END])
+    .addEdge("adjustOption", "compareOptions")
     .addEdge("writeAdrs", "breakdown")
     .addEdge("breakdown", "checkCoverage")
     .addConditionalEdges("checkCoverage", afterCoverage, ["breakdown", "approvePlan"])
     .addConditionalEdges("approvePlan", afterPlanGate, ["emit", END])
     .addEdge("emit", END)
-    .compile({ checkpointer: new MemorySaver() });
+    .compile({ checkpointer: opts.checkpointer ?? new MemorySaver() });
 }

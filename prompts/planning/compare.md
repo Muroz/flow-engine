@@ -5,4 +5,4 @@ REQUIREMENTS:
 
 {{options}}
 
-Reply with a single JSON object: {"recommended": "A|B|C", "why": "two or three sentences"}
+Reply with a single JSON object: {"recommended": "A|B|C", "why": "one sentence the owner can read at a glance"}

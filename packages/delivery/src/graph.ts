@@ -21,7 +21,7 @@
  */
 import type { FlowDeps, LogEntry, PlannedTask, DiffSource } from "@flows/core";
 import { buildReviewGraph } from "@flows/review";
-import { Annotation, END, MemorySaver, START, StateGraph } from "@langchain/langgraph";
+import { Annotation, END, MemorySaver, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
 import {
   afterChecks,
   afterEscalate,
@@ -59,7 +59,7 @@ export const DeliveryAnnotation = Annotation.Root({
   log: Annotation<LogEntry[]>({ reducer: concat, default: () => [] }),
 });
 
-export function buildDeliveryGraph(deps: FlowDeps) {
+export function buildDeliveryGraph(deps: FlowDeps, opts: { checkpointer?: BaseCheckpointSaver } = {}) {
   const reviewGraph = buildReviewGraph(deps);
 
   return new StateGraph(DeliveryAnnotation)
@@ -83,5 +83,5 @@ export function buildDeliveryGraph(deps: FlowDeps) {
     .addEdge("explainWork", "approveMerge")
     .addEdge("approveMerge", END)
     // Human gates need a checkpointer: that's what lets the graph pause and resume.
-    .compile({ checkpointer: new MemorySaver() });
+    .compile({ checkpointer: opts.checkpointer ?? new MemorySaver() });
 }

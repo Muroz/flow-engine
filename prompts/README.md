@@ -15,8 +15,10 @@ Each generative node has one Markdown prompt here, so you can read, diff and tes
 | `delivery/plan.md` | `makePlan` | `task`, `acceptance_criteria`, `adrs` |
 | `delivery/walkthrough.md` | `explainWork` and `flows explain` | `writing_rules`, `task`, `acceptance_criteria`, `plan`, `review`, `files`, `diff` |
 | `planning/questions.md` | `askQuestions` | `brief` |
-| `planning/requirements.md` | `writeRequirements` | `brief` |
-| `planning/option.md` | `proposeOption` | `angle`, `requirements`, `brief` |
+| `planning/requirements.md` | `writeRequirements`, first pass | `brief` |
+| `planning/revise-requirements.md` | `writeRequirements`, after a revise | `requirements`, `feedback` |
+| `planning/option.md` | `proposeOption` | `angle`, `requirements`, `brief`, `feedback` |
+| `planning/adjust-option.md` | `adjustOption` | `option`, `feedback`, `requirements` |
 | `planning/compare.md` | `compareOptions` | `requirements`, `options` |
 | `planning/adrs.md` | `writeAdrs` | `chosen`, `requirements` |
 | `planning/breakdown.md` | `breakdown` | `requirements`, `adrs`, `previous`, `gaps` |
