@@ -14,7 +14,31 @@ export function registerDeliveryMocks(deps: FlowDeps): void {
               "Add tests for filters, pagination and invalid dates",
             ],
           })
-        : undefined,
+        : req.tag === "delivery.walkthrough"
+          ? [
+              "## In short",
+              "Customers can now search their orders by status and date. Results come back in pages of up to 50.",
+              "",
+              "## How it works",
+              "```mermaid",
+              "flowchart LR",
+              "  A[Search page] -->|filters| B[Search route]",
+              "  B -->|checked filters| C[Repository]",
+              "  C -->|matching orders| B",
+              "```",
+              "",
+              "## What changed",
+              "| File | What it does | Change |",
+              "|---|---|---|",
+              "| `src/routes/search.ts` | Answers search requests | New |",
+              "",
+              "## How to try it",
+              "1. Run `npm test`.",
+              "",
+              "## Worth knowing",
+              "Nothing to flag.",
+            ].join("\n")
+          : undefined,
     );
   }
   if (deps.judge instanceof MockJudge) {

@@ -6,6 +6,7 @@
  *   flows deliver --repo <dir> --task T-002 [--diff-file f] [--base main]
  *   flows plan    --repo <dir> --brief brief.md [--write]
  *   flows tasks   --repo <dir> [--done T-001,T-002]
+ *   flows explain --repo <dir> --task T-002 [--diff-file f | --base main --head HEAD]
  *
  * Common: [--artifacts <dir>] (shadow workspace) [--offline] [--claude-code] (every model on local Claude Code)
  *         [--yes] (auto-approve gates)
@@ -13,7 +14,7 @@
  * Relative paths resolve against the directory you ran the command from, even
  * through `pnpm --dir <engine> flows …` (pnpm sets INIT_CWD to that directory).
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
@@ -30,7 +31,14 @@ import {
   writeRunFile,
   type DiffSource,
 } from "@flows/core";
-import { buildDeliveryGraph, registerDeliveryMocks, type DeliveryState } from "@flows/delivery";
+import {
+  buildDeliveryGraph,
+  registerDeliveryMocks,
+  worktreeDiff,
+  worktreePath,
+  writeWalkthrough,
+  type DeliveryState,
+} from "@flows/delivery";
 import { buildPlanningGraph, registerPlanningMocks, type PlanningState } from "@flows/planning";
 import { registerReviewMocks, runReview } from "@flows/review";
 import { drive } from "./drive";
@@ -59,7 +67,7 @@ const { positionals, values: args } = parseArgs({
 
 const command = positionals[0];
 if (!command || !args.repo) {
-  console.error("usage: flows <review|deliver|plan|tasks> --repo <dir> [options]  (see packages/cli/src/index.ts)");
+  console.error("usage: flows <review|deliver|plan|tasks|explain> --repo <dir> [options]  (see packages/cli/src/index.ts)");
   process.exit(1);
 }
 
@@ -127,7 +135,33 @@ switch (command) {
     break;
   }
 
+  case "explain": {
+    if (!task) throw new Error("explain needs --task");
+    // Same diff delivery would review: the task's worktree if it has one, otherwise --diff-file or --base...--head.
+    const worktree = worktreePath(config.project, task.id);
+    const diff =
+      !args["diff-file"] && existsSync(worktree) ? worktreeDiff(worktree, args.base!) : loadDiff(config, diffSource);
+    const last = lastDelivery(task.id);
+    const runId = newRunId(`explain-${task.id}`);
+    const { walkthrough, log } = await writeWalkthrough(deps, { task, diff, runId, plan: last?.plan, review: last?.review });
+    console.log(readFileSync(walkthrough.path, "utf8"));
+    console.log(`\n📄 ${walkthrough.path} · cost $${(log.costUsd ?? 0).toFixed(4)}`);
+    break;
+  }
+
   default:
     console.error(`unknown command: ${command}`);
     process.exit(1);
+}
+
+/** Plan and review from the task's latest delivery run, skipping offline runs, so a walkthrough can use them. */
+function lastDelivery(taskId: string): Pick<DeliveryState, "plan" | "review"> | undefined {
+  const root = resolve(ENGINE_ROOT, "runs", config.project);
+  if (!existsSync(root)) return undefined;
+  const states = readdirSync(root)
+    .filter((d) => d.endsWith(`-deliver-${taskId}`) && existsSync(resolve(root, d, "state.json")))
+    .sort()
+    .reverse()
+    .map((d) => JSON.parse(readFileSync(resolve(root, d, "state.json"), "utf8")) as DeliveryState);
+  return states.find((s) => !s.log.some((e) => e.model?.startsWith("mock:")));
 }

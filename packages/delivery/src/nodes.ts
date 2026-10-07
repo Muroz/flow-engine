@@ -31,6 +31,7 @@ import { rank, type ReviewGraph, type ReviewState } from "@flows/review";
 import { END, interrupt } from "@langchain/langgraph";
 import { agentModel, BASE_TOOLS, ensureWorktree, runClaudeCode, worktreeDiff } from "./agents/claude-code";
 import type { DeliveryState, DeliveryUpdate } from "./state";
+import { appendJournal, writeWalkthrough } from "./walkthrough";
 
 const RISKS: readonly Risk[] = ["low", "medium", "high"];
 const bullets = (xs: string[]) => xs.map((x) => `- ${x}`).join("\n");
@@ -122,6 +123,7 @@ export const implement =
       deps.config.conventions.length ? `Conventions:\n${bullets(deps.config.conventions)}` : "",
       s.fixNotes.length ? `Fix these from the last attempt:\n${bullets(s.fixNotes)}` : "",
       "Add or update tests. Do not commit.",
+      `Any documentation or code comments you write follow these rules:\n\n${loadPrompt("_writing")}`,
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -215,24 +217,45 @@ export const escalate =
     return { outcome: "escalated", log: [logEntry("delivery.escalate", { note: "aborted" })] };
   };
 
-export const approveMerge = async (s: DeliveryState): Promise<DeliveryUpdate> => {
-  const d = gate({
-    gate: "approve-merge",
-    title: `Merge ${s.task.id}?`,
-    summary: [
-      `${s.task.title} — ${s.attempts} attempt(s)`,
-      `checks: ${s.checks ? (s.checks.passed ? "passing" : "failing") : "not run"} · review: ${s.review?.verdict ?? "not run"} (${s.review?.reason ?? ""})`,
-      ...(s.workdir ? [`branch: flows/${s.task.id} in ${s.workdir}`] : []),
-      ...(s.review?.findings.length ? ["", "Non-blocking comments:", bullets(s.fixNotes.slice(0, 6))] : []),
-    ].join("\n"),
-    options: ["merge", "reject"],
-  });
-  // Pushing and opening the PR stay with you (see docs/wiring.md, step 5).
-  return {
-    outcome: d.decision === "merge" ? "merged" : "rejected",
-    log: [logEntry("delivery.approveMerge", { note: d.decision })],
+// ── walkthrough ─────────────────────────────────────────────────────────────
+
+export const explainWork =
+  (deps: FlowDeps) =>
+  async (s: DeliveryState): Promise<DeliveryUpdate> => {
+    const { walkthrough, log } = await writeWalkthrough(deps, {
+      task: s.task,
+      diff: s.diff ?? "",
+      runId: s.runId,
+      plan: s.plan,
+      review: s.review,
+    });
+    return { walkthrough, log: [log] };
   };
-};
+
+export const approveMerge =
+  (deps: FlowDeps) =>
+  async (s: DeliveryState): Promise<DeliveryUpdate> => {
+    const d = gate({
+      gate: "approve-merge",
+      title: `Merge ${s.task.id}?`,
+      detailPath: s.walkthrough?.path,
+      summary: [
+        ...(s.walkthrough?.gist ? [s.walkthrough.gist, ""] : []),
+        `${s.task.title} — ${s.attempts} attempt(s)`,
+        `checks: ${s.checks ? (s.checks.passed ? "passing" : "failing") : "not run"} · review: ${s.review?.verdict ?? "not run"} (${s.review?.reason ?? ""})`,
+        ...(s.workdir ? [`branch: flows/${s.task.id} in ${s.workdir}`] : []),
+        ...(s.review?.findings.length ? ["", "Open review comments:", bullets(s.fixNotes.slice(0, 6))] : []),
+      ].join("\n"),
+      options: ["merge", "reject"],
+    });
+    // Pushing and opening the PR stay with you (see docs/wiring.md, step 5).
+    const merged = d.decision === "merge";
+    const journal = merged && s.walkthrough && !deps.offline ? appendJournal(deps, s.task, s.walkthrough, s.runId) : undefined;
+    return {
+      outcome: merged ? "merged" : "rejected",
+      log: [logEntry("delivery.approveMerge", { note: journal ? `${d.decision}, journal updated` : d.decision })],
+    };
+  };
 
 // ── routing (conditional edges) ─────────────────────────────────────────────
 
@@ -250,12 +273,12 @@ export const afterChecks = (deps: FlowDeps) => (s: DeliveryState) => {
 
 export const afterReview = (deps: FlowDeps) => (s: DeliveryState) => {
   const v = s.review?.verdict;
-  if (v === "pass") return "approveMerge";
+  if (v === "pass") return "explainWork";
   if (v === "fix" && s.attempts < deps.config.delivery.maxAttempts) return "implement";
   return "escalate";
 };
 
 export const afterEscalate = (s: DeliveryState) => {
   if (s.outcome) return END;
-  return s.attempts === 0 ? "implement" : "approveMerge"; // retry resets attempts; accept goes to merge
+  return s.attempts === 0 ? "implement" : "explainWork"; // retry resets attempts; accept goes to merge
 };

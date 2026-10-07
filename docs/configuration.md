@@ -20,7 +20,7 @@ judge:
   engine: auto
 
 review:
-  reviewers: [spec, correctness, security, tests, architecture]
+  reviewers: [spec, correctness, security, tests, architecture, docs]
   minConfidence: 0.6
   escalateAtSeverity: blocker
   dropSeverities: [nit]
@@ -57,9 +57,9 @@ Each role can use either backend, and one run can mix them.
 | Key | Default | Used by |
 |---|---|---|
 | `models.default` | `anthropic/claude-sonnet-5.5` | Any role you don't set. |
-| `models.planner` | `models.default` | Delivery's plan and every planning node except `compareOptions`. |
+| `models.planner` | `models.default` | Delivery's plan and walkthrough, and every planning node except `compareOptions`. |
 | `models.implementer` | `models.default` | The Claude Code agent, when `delivery.agent` is `claude-code`. A `claude-code/<model>` ID sets its `--model`. An OpenRouter slug leaves the choice to Claude Code. |
-| `models.reviewer` | `openai/gpt-5.5` | The five review specialists and planning's `compareOptions`. Keep it on a different vendor from the implementer, so the checker isn't grading its own work. |
+| `models.reviewer` | `openai/gpt-5.5` | The review specialists and planning's `compareOptions`. Keep it on a different vendor from the implementer, so the checker isn't grading its own work. |
 | `models.judge` | `openai/gpt-5.4-mini` | The LLM judge. Only used when Jev isn't. |
 
 `createDeps` in `packages/core/src/deps.ts` checks the roles a run will call before it starts. It fails with the list of roles that need `OPENROUTER_API_KEY` when the key is missing. With `--claude-code`, or `FLOWS_CLAUDE_CODE=1`, it moves every role that isn't already on `claude-code/` to `claude-code/default`.
@@ -81,7 +81,7 @@ Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provid
 
 | Key | Default | Meaning |
 |---|---|---|
-| `review.reviewers` | All five | Which specialists run. `spec` only runs with a task that has acceptance criteria. `architecture` only runs when there are ADRs or conventions. |
+| `review.reviewers` | All six | Which specialists run. `spec` only runs with a task that has acceptance criteria. `architecture` only runs when there are ADRs or conventions. `docs` only runs when the diff changes docs or adds comments. |
 | `review.minConfidence` | `0.6` | The judge drops findings it is less sure of than this. Raise it if reviews are noisy, and lower it if they miss things. |
 | `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped. `major` makes the flow ask you more often. |
 | `review.dropSeverities` | `[nit]` | Severities that never reach you. Add `minor` to see only blocking issues. |

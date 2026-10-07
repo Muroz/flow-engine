@@ -25,6 +25,8 @@ export type DeliveryState = {
   review?: { verdict: Verdict; reason: string; findings: TriagedFinding[]; report: string };
   /** What the next implementation attempt must address (from checks or review). */
   fixNotes: string[];
+  /** Plain-language explanation of the work, written before the merge gate. */
+  walkthrough?: { path: string; gist: string };
 
   // ── result ──
   outcome?: "merged" | "rejected" | "escalated";

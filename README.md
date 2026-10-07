@@ -18,7 +18,7 @@ It has three flows:
 | Flow | Input | Output | Status |
 |---|---|---|---|
 | [review](packages/review/README.md) | A diff, and optionally a task | A verdict (`pass`, `fix` or `escalate`) and a one-screen report | Ready for real use |
-| [delivery](packages/delivery/README.md) | One task from `plan/tasks.yaml` | Code on branch `flows/<task>`, reviewed and approved by you | Ready to try with Claude Code as the agent |
+| [delivery](packages/delivery/README.md) | One task from `plan/tasks.yaml` | Code on branch `flows/<task>`, reviewed and approved by you, with a plain-language walkthrough | Ready to try with Claude Code as the agent |
 | [planning](packages/planning/README.md) | A client brief | A PRD, ADRs and `plan/tasks.yaml` | Runs end to end; the prompts are first drafts |
 
 ## Requirements
@@ -44,7 +44,7 @@ To run the steps one at a time:
 ```bash
 pnpm install
 pnpm test                  # unit tests for nodes, routing and the worktree helpers
-pnpm review:sample         # review a sample diff with five specialist reviewers
+pnpm review:sample         # review a sample diff with the specialist reviewers
 pnpm deliver:sample --yes  # plan, risk, implement, checks, review loop, stop rule
 pnpm plan:sample --yes     # brief, questions, scope, three architectures, ADRs, tasks
 ```
@@ -95,6 +95,7 @@ Without `--yes`, each human gate asks you in the terminal. The mocks are test do
 | `flows deliver --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Takes one task from plan to merge gate. `delivery.agent` in `.flows.yaml` picks who writes the code. |
 | `flows plan --repo <dir> --brief <file> [--write]` | Turns a brief into a PRD, ADRs and tasks. Writes a proposal under `runs/` unless you pass `--write`. |
 | `flows tasks --repo <dir> [--done T-001,T-002]` | Prints the task list and marks which tasks are ready to start. Needs no keys. |
+| `flows explain --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Writes a plain-language walkthrough of a task's changes. Delivery writes one before every merge gate; use this for work you want explained again. |
 
 Every command also takes these options:
 

@@ -197,6 +197,8 @@ To turn it on:
    pnpm flows deliver --repo /path/to/project --task T-001 --base main
    ```
 
+Before the merge gate, delivery writes `walkthrough.md` in the run folder: a plain-language account of what changed, how it works, with diagrams where they help, and how to try it. The gate shows its summary. On `merge`, the task joins `runs/<project>/journal.md`, which you can read to follow the whole project. [Walkthroughs](../packages/delivery/README.md#walkthroughs) has the details.
+
 When the run ends, the CLI prints the worktree path. The changes stay there, staged but not committed, until you act on them.
 
 Delivery reuses a task's worktree on every run, so a second run builds on the first run's changes. To start a task from scratch, remove its worktree and branch:

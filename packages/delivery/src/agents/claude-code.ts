@@ -25,7 +25,7 @@ export function ensureWorktree(repo: string, project: string, taskId: string, ba
   if (realpathSync(top) !== realpathSync(repo)) {
     throw new Error(`--repo must be the root of a git repository (got ${repo}, root is ${top}).`);
   }
-  const dir = join(ENGINE_ROOT, "runs", project, "worktrees", taskId);
+  const dir = worktreePath(project, taskId);
   if (!existsSync(dir)) {
     execFileSync("git", ["-C", repo, "worktree", "add", "-B", `flows/${taskId}`, dir, base], { stdio: "pipe" });
   }
@@ -41,6 +41,10 @@ export function agentModel(implementer: string | undefined): string | undefined 
   if (!implementer || !isClaudeCodeModel(implementer)) return undefined;
   const alias = implementer.slice(CLAUDE_CODE_PREFIX.length);
   return alias && alias !== "default" ? alias : undefined;
+}
+
+export function worktreePath(project: string, taskId: string): string {
+  return join(ENGINE_ROOT, "runs", project, "worktrees", taskId);
 }
 
 /** Run Claude Code headless in `workdir`. Returns its JSON transcript. */

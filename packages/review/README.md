@@ -9,7 +9,8 @@ START → loadContext ─┬─► reviewer(spec)         ─┐
                      ├─► reviewer(correctness)  ─┤
                      ├─► reviewer(security)     ─┼─► aggregate → triage → decide → writeReport → END
                      ├─► reviewer(tests)        ─┤
-                     └─► reviewer(architecture) ─┘
+                     ├─► reviewer(architecture) ─┤
+                     └─► reviewer(docs)         ─┘
 ```
 
 | Node | Kind | What it does |
@@ -42,6 +43,7 @@ Each specialist sees only its own view of the context. That keeps prompts short 
 | `security` | Diff | Always. |
 | `tests` | Changed files, acceptance criteria, diff | Always. |
 | `architecture` | ADR decisions, conventions, diff | The project has ADRs or conventions. |
+| `docs` | Writing rules from `prompts/_writing.md`, diff | The diff changes a Markdown or text file, or adds a comment line. |
 
 To add a specialist:
 

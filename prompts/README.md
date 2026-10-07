@@ -4,13 +4,16 @@ Each generative node has one Markdown prompt here, so you can read, diff and tes
 
 | File | Node | Placeholders |
 |---|---|---|
+| `_writing.md` | `explainWork`, the `docs` reviewer and the Claude Code agent, as `{{writing_rules}}` | none |
 | `review/_output.md` | Every review specialist, as `{{output_format}}` | none |
 | `review/spec.md` | `reviewer` (spec) | `task_title`, `acceptance_criteria`, `diff`, `output_format` |
 | `review/correctness.md` | `reviewer` (correctness) | `diff`, `output_format` |
 | `review/security.md` | `reviewer` (security) | `diff`, `output_format` |
 | `review/tests.md` | `reviewer` (tests) | `changed_files`, `acceptance_criteria`, `diff`, `output_format` |
 | `review/architecture.md` | `reviewer` (architecture) | `decisions`, `conventions`, `diff`, `output_format` |
+| `review/docs.md` | `reviewer` (docs) | `writing_rules`, `diff`, `output_format` |
 | `delivery/plan.md` | `makePlan` | `task`, `acceptance_criteria`, `adrs` |
+| `delivery/walkthrough.md` | `explainWork` and `flows explain` | `writing_rules`, `task`, `acceptance_criteria`, `plan`, `review`, `files`, `diff` |
 | `planning/questions.md` | `askQuestions` | `brief` |
 | `planning/requirements.md` | `writeRequirements` | `brief` |
 | `planning/option.md` | `proposeOption` | `angle`, `requirements`, `brief` |
@@ -18,7 +21,7 @@ Each generative node has one Markdown prompt here, so you can read, diff and tes
 | `planning/adrs.md` | `writeAdrs` | `chosen`, `requirements` |
 | `planning/breakdown.md` | `breakdown` | `requirements`, `adrs`, `previous`, `gaps` |
 
-Every prompt asks for a single JSON object, and the node parses it with `parseJsonReply`. If you change the JSON shape in a prompt, change the parsing in the node too.
+Every prompt except `delivery/walkthrough.md` asks for a single JSON object, and the node parses it with `parseJsonReply`. If you change the JSON shape in a prompt, change the parsing in the node too. The walkthrough prompt asks for Markdown, and the merge gate shows its `## In short` section, so keep that heading.
 
 The Claude Code agent's prompt isn't here. `implement` in `packages/delivery/src/nodes.ts` builds it from the task, because it is mostly data.
 

@@ -30,16 +30,16 @@ test("failing checks loop until the stop rule, then escalate", () => {
   assert.equal(afterChecks(deps)(s({ checks: failed, attempts: 3 })), "escalate");
 });
 
-test("review verdicts route to merge, another attempt, or you", () => {
+test("review verdicts route to the walkthrough, another attempt, or you", () => {
   const r = (verdict: "pass" | "fix" | "escalate") => ({ verdict, reason: "", findings: [], report: "" });
-  assert.equal(afterReview(deps)(s({ review: r("pass") })), "approveMerge");
+  assert.equal(afterReview(deps)(s({ review: r("pass") })), "explainWork");
   assert.equal(afterReview(deps)(s({ review: r("fix"), attempts: 1 })), "implement");
   assert.equal(afterReview(deps)(s({ review: r("fix"), attempts: 3 })), "escalate");
   assert.equal(afterReview(deps)(s({ review: r("escalate") })), "escalate");
 });
 
-test("escalation: abort ends, retry resets, accept goes to merge", () => {
+test("escalation: abort ends, retry resets, accept goes to the walkthrough", () => {
   assert.equal(afterEscalate(s({ outcome: "escalated" })), END);
   assert.equal(afterEscalate(s({ attempts: 0 })), "implement");
-  assert.equal(afterEscalate(s({ attempts: 3 })), "approveMerge");
+  assert.equal(afterEscalate(s({ attempts: 3 })), "explainWork");
 });

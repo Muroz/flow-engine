@@ -9,6 +9,7 @@
  * To add a reviewer: add an entry here, add prompts/review/<id>.md, and list
  * the id under `review.reviewers` in .flows.yaml.
  */
+import { loadPrompt } from "@flows/core";
 import type { ReviewContext } from "./state";
 
 export type ReviewerSpec = {
@@ -69,7 +70,22 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
       diff: ctx.diff,
     }),
   },
+
+  docs: {
+    id: "docs",
+    prompt: "review/docs",
+    appliesTo: (ctx) => touchesDocs(ctx),
+    view: (ctx) => ({ writing_rules: loadPrompt("_writing"), diff: ctx.diff }),
+  },
 };
+
+const DOC_FILE = /\.(md|mdx|txt|rst)$/i;
+const ADDED_COMMENT = /^\+(?!\+\+)\s*(\/\/|\/\*|\*|#(?!!))/m;
+
+/** Runs when the diff changes a doc file or adds a comment line. */
+export function touchesDocs(ctx: ReviewContext): boolean {
+  return ctx.files.some((f) => DOC_FILE.test(f)) || ADDED_COMMENT.test(ctx.diff);
+}
 
 /** Reviewers enabled in config that apply to this context. */
 export function activeReviewers(ids: string[], ctx: ReviewContext): ReviewerSpec[] {

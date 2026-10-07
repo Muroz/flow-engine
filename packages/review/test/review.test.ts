@@ -77,3 +77,12 @@ test("fileDiff returns only the requested file's section", () => {
   assert.ok(fileDiff(diff, "y.ts").includes("+y"));
   assert.ok(!fileDiff(diff, "y.ts").includes("+x"));
 });
+
+test("docs reviewer runs only when the diff touches docs or adds comments", () => {
+  const ctx = (files: string[], diff: string) => ({ diff, files, adrs: [], conventions: [] });
+  const ids = (c: ReturnType<typeof ctx>) => activeReviewers(["docs"], c).map((r) => r.id);
+  assert.deepEqual(ids(ctx(["README.md"], "+Some text")), ["docs"]);
+  assert.deepEqual(ids(ctx(["src/a.ts"], "+++ b/src/a.ts\n+  // explain the retry limit\n+const x = 1;")), ["docs"]);
+  assert.deepEqual(ids(ctx(["src/a.ts"], "+++ b/src/a.ts\n+const x = 1;")), []);
+  assert.deepEqual(ids(ctx(["bin/run"], "+++ b/bin/run\n+#!/usr/bin/env node")), []);
+});

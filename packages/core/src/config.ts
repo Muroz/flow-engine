@@ -77,7 +77,7 @@ const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
   openrouterProvider: { data_collection: "deny" },
   judgeEngine: "auto",
   review: {
-    reviewers: ["spec", "correctness", "security", "tests", "architecture"],
+    reviewers: ["spec", "correctness", "security", "tests", "architecture", "docs"],
     minConfidence: 0.6,
     escalateAtSeverity: "blocker",
     dropSeverities: ["nit"],
