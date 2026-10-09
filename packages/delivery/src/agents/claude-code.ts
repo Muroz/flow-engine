@@ -139,3 +139,16 @@ export function worktreeDiff(workdir: string, base: string): string {
     maxBuffer: 32 * 1024 * 1024,
   });
 }
+
+/**
+ * The git tree of everything `worktreeDiff` staged. Writing a tree object
+ * leaves the worktree, the index and the branch as they are.
+ */
+export function snapshotTree(workdir: string): string {
+  return execFileSync("git", ["-C", workdir, "write-tree"], { encoding: "utf8" }).trim();
+}
+
+/** What changed between two snapshots. */
+export function treeDiff(workdir: string, from: string, to: string): string {
+  return execFileSync("git", ["-C", workdir, "diff", from, to], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+}

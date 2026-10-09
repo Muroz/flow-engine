@@ -25,6 +25,8 @@ export type ProjectConfig = {
     reviewer?: string;
     /** Only used when the judge engine is "llm". */
     judge?: string;
+    /** Checks each review finding against the code, the ADRs, the standards and earlier rounds. Falls back to `judge`. */
+    verifier?: string;
   };
 
   /**
@@ -192,5 +194,7 @@ export const reviewIgnore = (config: ProjectConfig) => [...DEFAULT_REVIEW_IGNORE
 
 /** The model a given role should use, falling back to the default. */
 export function modelFor(config: ProjectConfig, role: keyof ProjectConfig["models"]): string {
+  // The verifier does a judge's job with a longer answer, so it runs on the judge's model unless you name one.
+  if (role === "verifier") return config.models.verifier ?? config.models.judge ?? config.models.default;
   return config.models[role] ?? config.models.default;
 }

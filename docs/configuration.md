@@ -72,6 +72,7 @@ Each role can use either backend, and one run can mix them.
 | `models.implementer` | `models.default` | The Claude Code agent, when `delivery.agent` is `claude-code`. A `claude-code/<model>` ID sets its `--model`. With an OpenRouter slug, the agent uses `claudeCode.model`. |
 | `models.reviewer` | `openai/gpt-5.5` | The review specialists and planning's `compareOptions`. Keep it on a different vendor from the implementer, so the checker isn't grading its own work. |
 | `models.judge` | `openai/gpt-5.4-mini` | The LLM judge. Only used when Jev isn't. |
+| `models.verifier` | `models.judge` | Checks each review finding before the agent sees it. It reads the whole file, every ADR and standard, and earlier rounds' findings, then calls the finding valid, invalid or a conflict. It always calls this model, even when Jev is the judge. |
 
 `createDeps` in `packages/core/src/deps.ts` checks the roles a run will call before it starts. It fails with the list of roles that need `OPENROUTER_API_KEY` when the key is missing. With `--claude-code`, or `FLOWS_CLAUDE_CODE=1`, it moves every role that isn't already on `claude-code/` to `claude-code/default`.
 
@@ -93,8 +94,8 @@ Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provid
 | Key | Default | Meaning |
 |---|---|---|
 | `review.reviewers` | All six | Which specialists run. `spec` only runs with a task that has acceptance criteria. `architecture` only runs when there are ADRs or conventions. `docs` only runs when the diff changes docs or adds comments. |
-| `review.minConfidence` | `0.6` | The judge drops findings it is less sure of than this. Raise it if reviews are noisy, and lower it if they miss things. |
-| `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped. `major` makes the flow ask you more often. |
+| `review.minConfidence` | `0.6` | Applies only to findings the verifier couldn't check: the judge drops those it is less sure of than this. The verifier decides the rest, dropping invalid findings and sending conflicts to you. |
+| `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped. `major` makes the flow ask you more often. Findings the verifier ruled out never count. |
 | `review.dropSeverities` | `[nit]` | Severities that never reach you. Add `minor` to see only blocking issues. |
 | `review.ignore` | `[]` | File patterns that review and walkthroughs skip, added to the built-in list of lockfiles, build output, source maps and snapshots. A pattern without a slash matches the file name in any folder, such as `*.generated.ts`. `**` matches any number of folders. |
 

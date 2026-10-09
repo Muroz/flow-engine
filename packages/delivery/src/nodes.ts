@@ -29,12 +29,13 @@ import {
   type FlowDeps,
   type GateDecision,
   type GateRequest,
+  type PriorFinding,
   type Risk,
   type TriagedFinding,
 } from "@flows/core";
-import { rank, type ReviewGraph, type ReviewState } from "@flows/review";
+import { conflictWith, isConflict, rank, type ReviewGraph, type ReviewState } from "@flows/review";
 import { END, interrupt, type LangGraphRunnableConfig } from "@langchain/langgraph";
-import { agentModel, BASE_TOOLS, ensureWorktree, runClaudeCode, worktreeDiff } from "./agents/claude-code";
+import { agentModel, BASE_TOOLS, ensureWorktree, runClaudeCode, snapshotTree, treeDiff, worktreeDiff } from "./agents/claude-code";
 import type { CheckResult, DeliveryState, DeliveryUpdate } from "./state";
 import { appendJournal, writeWalkthrough } from "./walkthrough";
 
@@ -149,23 +150,63 @@ export const implement =
     const model = agentModel(deps.config.models.implementer, deps.config.claudeCodeModel);
     const dir = runDir(deps.config, s.runId);
     let note = `round ${round}, attempt ${attempt}/${max}${addressing} (claude-code${model ? ` ${model}` : ""})`;
+    let declined: PriorFinding[] = [];
     try {
       const run = await runClaudeCode(workdir, prompt, tools, model, (step) => say(config, `      ${step}`));
       writeRunFile(dir, `agent-${round}.json`, run.result);
       writeRunFile(dir, `agent-${round}.jsonl`, run.events);
       if (run.costUsd !== undefined) note += `, agent list price $${run.costUsd.toFixed(2)}`;
+      declined = parseDeclines(resultText(run.result), s.ledger ?? [], round);
+      if (declined.length) note += `, declined ${declined.length}`;
     } catch (e: any) {
       writeRunFile(dir, `agent-${round}.log`, String(e.message));
       note += `: agent failed (${String(e.message).split("\n")[0]})`;
     }
 
+    const diff = worktreeDiff(workdir, s.base);
     return {
       attempts: attempt,
       workdir,
-      diff: worktreeDiff(workdir, s.base),
-      log: [logEntry("delivery.implement", { note, details })],
+      diff,
+      tree: snapshotTree(workdir),
+      ledger: declined,
+      log: [logEntry("delivery.implement", { note, details: [...details, ...declined.map((d) => `declined: ${d.title} — ${d.note}`)] })],
     };
   };
+
+/** The agent's final message, from Claude Code's result event. */
+function resultText(resultLine: string): string {
+  try {
+    return String(JSON.parse(resultLine).result ?? "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The notes the agent refused, from lines such as
+ * "Declined: Move the client under src/lib — ADR-0007 puts it in src/db".
+ * Each is matched to the ledger entry it refers to, by title.
+ */
+export function parseDeclines(text: string, ledger: PriorFinding[], round: number): PriorFinding[] {
+  const out: PriorFinding[] = [];
+  for (const m of text.matchAll(/^\W*Declined:\s*(.+?)\s+(?:—|–|--|-)\s+(.+)$/gm)) {
+    const title = m[1]!.replace(/^\[\w+\]\s*/, "").replace(/[*`]/g, "").trim();
+    const reason = m[2]!.trim();
+    const sent = [...ledger].reverse().find((p) => p.status === "sent" && sameTitle(p.title, title));
+    out.push(
+      sent
+        ? { ...sent, round, status: "declined", note: reason }
+        : { round, reviewer: "unknown", severity: "minor", title, rationale: "", status: "declined", note: reason },
+    );
+  }
+  return out;
+}
+
+const sameTitle = (a: string, b: string) => {
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return norm(a) === norm(b) || norm(a).startsWith(norm(b)) || norm(b).startsWith(norm(a));
+};
 
 /** What the coding agent is told for one attempt. */
 export function agentPrompt(s: DeliveryState, deps: FlowDeps): string {
@@ -179,7 +220,11 @@ export function agentPrompt(s: DeliveryState, deps: FlowDeps): string {
     adrs.length ? `Decisions to respect:\n${adrs.map((a) => `${adrHeading(a)}\n${a.decision}`).join("\n\n")}` : "",
     deps.config.conventions.length ? `Conventions:\n${bullets(deps.config.conventions)}` : "",
     s.fixNotes.length
-      ? `This is a follow-up round. The code from earlier rounds is already in place. Fix only these, and change nothing else:\n${bullets(s.fixNotes)}`
+      ? [
+          `This is a follow-up round. The code from earlier rounds is already in place. Fix these, and change nothing else:\n${bullets(s.fixNotes)}`,
+          "If a note contradicts an ADR, a project standard, an acceptance criterion or a change an earlier round asked for, don't apply it. " +
+            "End your reply with one line per note you didn't apply, in the form `Declined: <note title> — <reason>`. A person will decide.",
+        ].join("\n\n")
       : "",
     "Build only what the acceptance criteria, the ADRs and the standards ask for. Add or update tests. Do not commit.",
     `Any documentation or code comments you write follow these rules:\n\n${writingRules("developer")}`,
@@ -249,31 +294,64 @@ export function findingNote(f: TriagedFinding): string {
 
 /**
  * The review flow runs as a subgraph. The mapping in and out is explicit on
- * purpose: review sees the diff and the task — not the plan, the fix history
- * or the checks output — and delivery gets back only the verdict and findings.
+ * purpose: review sees the diff, the task and what earlier rounds asked for
+ * (the ledger and what changed since) — not the plan or the checks output.
+ * Delivery gets back the verdict, the findings to fix and the conflicts to
+ * put to you.
  */
 export const review =
   (deps: FlowDeps, reviewGraph: ReviewGraph) =>
   async (s: DeliveryState): Promise<DeliveryUpdate> => {
     const round = roundOf(s);
+    const ledger = s.ledger ?? [];
+    const delta = ledger.length && s.workdir && s.reviewedTree && s.tree ? treeDiff(s.workdir, s.reviewedTree, s.tree) : undefined;
     const out = (await reviewGraph.invoke({
-      input: { diff: s.diff ?? "", task: s.task, label: `${s.task.id} round ${round}` },
+      input: { diff: s.diff ?? "", task: s.task, label: `${s.task.id} round ${round}`, prior: ledger, delta, workdir: s.workdir },
     })) as ReviewState;
 
-    const kept = (out.findings ?? []).filter((f) => f.kept).sort((a, b) => rank(b.judgedSeverity) - rank(a.judgedSeverity));
+    const all = out.findings ?? [];
+    const kept = all.filter((f) => f.kept).sort((a, b) => rank(b.judgedSeverity) - rank(a.judgedSeverity));
+    const conflicts = all.filter((f) => !f.kept && isConflict(f));
     const reportPath = writeRunFile(runDir(deps.config, s.runId), `review-${round}.md`, out.report ?? "");
     return {
-      review: { verdict: out.verdict ?? "escalate", reason: out.verdictReason ?? "", findings: kept, report: out.report ?? "", reportPath },
+      review: { verdict: out.verdict ?? "escalate", reason: out.verdictReason ?? "", findings: kept, conflicts, report: out.report ?? "", reportPath },
       fixNotes: kept.map(findingNote),
+      reviewedTree: s.tree,
+      ledger: [
+        ...kept.map((f) => toPrior(f, round, "sent")),
+        ...conflicts.map((f) => ({ ...toPrior(f, round, "escalated"), note: `conflicts with ${conflictWith(f)}` })),
+      ],
       log: [
         ...out.log,
         logEntry("delivery.review", {
           note: `${out.verdict}: ${out.verdictReason}`,
-          details: kept.map((f) => `[${f.judgedSeverity}] ${f.title}${f.file ? ` (${f.file})` : ""}`),
+          details: [
+            ...kept.map((f) => `[${f.judgedSeverity}] ${f.title}${f.file ? ` (${f.file})` : ""}`),
+            ...conflicts.map((f) => `conflict: ${f.title} vs ${conflictWith(f)}`),
+          ],
         }),
       ],
     };
   };
+
+const toPrior = (f: TriagedFinding, round: number, status: PriorFinding["status"]): PriorFinding => ({
+  round,
+  reviewer: f.reviewer,
+  severity: f.judgedSeverity,
+  title: f.title,
+  file: f.file,
+  rationale: f.rationale.split(/(?<=\.)\s/)[0] ?? "",
+  status,
+});
+
+/** Findings still open from any round: the ones the agent declined and the conflicts left for you, latest per title. */
+export function openItems(ledger: PriorFinding[]): string[] {
+  const latest = new Map<string, PriorFinding>();
+  for (const p of ledger) latest.set(p.title, p);
+  return [...latest.values()]
+    .filter((p) => p.status !== "sent")
+    .map((p) => `round ${p.round}, ${p.status === "declined" ? "declined by the agent" : "conflict"}: ${p.title}${p.note ? ` (${p.note})` : ""}`);
+}
 
 // ── escalate & merge gates ──────────────────────────────────────────────────
 
@@ -295,6 +373,7 @@ export const escalate =
         ? `Out of attempts: ${s.attempts} of ${maxAttempts} used and still not passing.`
         : `The reviewer wants a person to look: ${s.review?.reason ?? "unknown"}`;
     const findings = s.review?.findings ?? [];
+    const open = openItems(s.ledger ?? []);
     const failedCheck = s.checks && !s.checks.passed ? s.checks.results.find((r) => r.status === "failed") : undefined;
     const d = gate({
       gate: "escalate",
@@ -309,6 +388,7 @@ export const escalate =
         "",
         `Still open (${findings.filter(blocking).length} blocking, ${findings.filter((f) => !blocking(f)).length} minor):`,
         ...findings.slice(0, 8).map((f) => `  ${findingNote(f)}`),
+        ...(open.length ? ["", "For you to decide (add your call as a note on retry):", ...open.map((o) => `  ${o}`)] : []),
         "",
         `retry gives ${retryAttempts} more attempt(s) and resets the cost limit. Notes you add go to the agent.`,
       ].join("\n"),
@@ -370,6 +450,7 @@ export const approveMerge =
         `Review: ${s.review?.verdict ?? "not run"} (${s.review?.reason ?? ""})`,
         ...(s.workdir ? [`Branch: flows/${s.task.id} in ${s.workdir}`] : []),
         ...(comments.length ? ["", "Open review comments:", ...comments.map((c, i) => `  ${i + 1}. ${c}`)] : []),
+        ...(openItems(s.ledger ?? []).length ? ["", "Declined or in conflict, from any round:", ...openItems(s.ledger ?? []).map((o) => `  ${o}`)] : []),
         ...(comments.length
           ? ["", `fix sends comments back for ${deps.config.delivery.retryAttempts} more attempt(s): no notes for all, "1,3" for some, or your own text.`]
           : []),

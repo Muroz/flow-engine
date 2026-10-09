@@ -1,6 +1,6 @@
 Reply with a single JSON object and nothing else:
 
-{"findings": [{"title": "short imperative summary", "file": "path/in/diff.ts", "line": 42, "severity": "nit|minor|major|blocker", "rationale": "why this is a problem, one or two sentences", "suggestion": "concrete fix (optional)"}]}
+{"findings": [{"title": "short imperative summary", "file": "path/in/diff.ts", "line": 42, "severity": "nit|minor|major|blocker", "rationale": "why this is a problem, one or two sentences", "suggestion": "concrete fix (optional)", "reverses": "earlier finding's title (later rounds only, optional)"}]}
 
 Severity guide:
 - blocker: must not merge. A security hole in code that runs, data loss, or a broken build or failing check.

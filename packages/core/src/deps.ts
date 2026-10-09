@@ -87,7 +87,7 @@ type RoleModel = { role: keyof ProjectConfig["models"]; model: string };
  * agent reads it, and that agent runs on its own.
  */
 export function rolesInUse(config: ProjectConfig, engine: "jev" | "llm"): RoleModel[] {
-  const roles: RoleModel["role"][] = ["planner", "reviewer", ...(engine === "llm" ? (["judge"] as const) : [])];
+  const roles: RoleModel["role"][] = ["planner", "reviewer", "verifier", ...(engine === "llm" ? (["judge"] as const) : [])];
   return roles.map((role) => ({ role, model: modelFor(config, role) }));
 }
 
@@ -102,6 +102,7 @@ export function withClaudeCodeModels(config: ProjectConfig): ProjectConfig {
       implementer: keep(config.models.implementer ?? config.models.default),
       reviewer: keep(config.models.reviewer ?? config.models.default),
       judge: keep(config.models.judge ?? config.models.default),
+      verifier: keep(config.models.verifier ?? config.models.judge ?? config.models.default),
     },
   };
 }

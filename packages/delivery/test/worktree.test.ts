@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ENGINE_ROOT } from "@flows/core";
-import { agentModel, describeEvent, ensureWorktree, worktreeDiff } from "../src/agents/claude-code";
+import { agentModel, describeEvent, ensureWorktree, snapshotTree, treeDiff, worktreeDiff } from "../src/agents/claude-code";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
 
@@ -94,4 +94,29 @@ test("ensureWorktree copies listed untracked files, such as .env, into the workt
   writeFileSync(join(dir, ".env"), "DATABASE_URL=postgres://local\nEXTRA=agent\n");
   ensureWorktree(repo, project, "T-001", "main", [".env"]);
   assert.match(readFileSync(join(dir, ".env"), "utf8"), /EXTRA=agent/, "a copy the agent changed is kept");
+});
+
+test("snapshots leave the worktree alone and show what changed between rounds", (t) => {
+  const repo = tempRepo();
+  const project = `test-snap-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const dir = ensureWorktree(repo, project, "T-001", "main");
+
+  writeFileSync(join(dir, "a.txt"), "round one\n");
+  worktreeDiff(dir, "main");
+  const status = git(dir, "status", "--porcelain");
+  const head = git(dir, "rev-parse", "HEAD");
+  const first = snapshotTree(dir);
+  assert.equal(git(dir, "status", "--porcelain"), status, "snapshot changes nothing in the worktree or index");
+  assert.equal(git(dir, "rev-parse", "HEAD"), head, "snapshot makes no commit");
+
+  writeFileSync(join(dir, "b.txt"), "round two\n");
+  worktreeDiff(dir, "main");
+  const second = snapshotTree(dir);
+  const delta = treeDiff(dir, first, second);
+  assert.match(delta, /^\+\+\+ b\/b\.txt$/m);
+  assert.doesNotMatch(delta, /round one/, "the delta leaves out what the last round already saw");
 });

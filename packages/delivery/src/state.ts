@@ -1,7 +1,7 @@
 /**
  * Delivery flow state — one planned task, from plan to merge.
  */
-import type { DiffSource, LogEntry, PlannedTask, Risk, TriagedFinding, Verdict } from "@flows/core";
+import type { DiffSource, LogEntry, PlannedTask, PriorFinding, Risk, TriagedFinding, Verdict } from "@flows/core";
 
 export type DeliveryPlan = { summary: string; steps: string[]; risk: Risk };
 
@@ -25,8 +25,21 @@ export type DeliveryState = {
   /** The agent's git worktree, when it has one. Checks run here. */
   workdir?: string;
   checks?: { passed: boolean; output: string; results: CheckResult[] };
-  /** Mapped back from the review subgraph — only what delivery needs. */
-  review?: { verdict: Verdict; reason: string; findings: TriagedFinding[]; report: string; reportPath?: string };
+  /** Git tree of the worktree after the last implement round. */
+  tree?: string;
+  /** Git tree the last review saw. Later rounds review what changed since. */
+  reviewedTree?: string;
+  /** Mapped back from the review subgraph — only what delivery needs. Conflicts are findings left for you to decide. */
+  review?: {
+    verdict: Verdict;
+    reason: string;
+    findings: TriagedFinding[];
+    conflicts?: TriagedFinding[];
+    report: string;
+    reportPath?: string;
+  };
+  /** Every finding sent to the agent, declined by it, or left for you, across rounds. Later reviews see it. */
+  ledger: PriorFinding[];
   /** What the next implementation attempt must address (from checks or review). */
   fixNotes: string[];
   /** Spend at the last retry or fix. The cost limit counts from here. */

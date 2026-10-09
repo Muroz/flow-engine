@@ -5,7 +5,7 @@
  * Keeping the plain types separate means every node is an ordinary function
  * you can unit-test without spinning up a graph.
  */
-import type { AdrRef, Finding, LogEntry, PlannedTask, Standard, TriagedFinding, Verdict } from "@flows/core";
+import type { AdrRef, Finding, LogEntry, PlannedTask, PriorFinding, Standard, TriagedFinding, Verdict, Verification } from "@flows/core";
 
 /** What the caller hands in. */
 export type ReviewInput = {
@@ -14,6 +14,12 @@ export type ReviewInput = {
   task?: PlannedTask;
   /** Human label for reports: "PR #42", "T-014 attempt 2", a diff file name. */
   label: string;
+  /** Findings from earlier rounds of the same task, so a later round doesn't undo them. */
+  prior?: PriorFinding[];
+  /** What changed since the last reviewed round. Later rounds review this part. */
+  delta?: string;
+  /** The checkout the diff came from. The verifier reads whole files from here. */
+  workdir?: string;
 };
 
 /** Loaded once by `loadContext`; each reviewer receives only a view of it. */
@@ -27,11 +33,18 @@ export type ReviewContext = {
   standards: Standard[];
   task?: PlannedTask;
   adrs: AdrRef[];
+  /** Every ADR in force, for the verifier. `adrs` holds only the ones the task names. */
+  allAdrs: AdrRef[];
   conventions: string[];
+  prior: PriorFinding[];
+  delta?: string;
 };
 
 /** A finding after de-duplication across reviewers. */
 export type MergedFinding = Finding & { alsoRaisedBy: string[] };
+
+/** A merged finding with the verifier's answer. */
+export type VerifiedFinding = MergedFinding & { verification: Verification };
 
 export type ReviewState = {
   input: ReviewInput;
@@ -41,6 +54,7 @@ export type ReviewState = {
   /** Appended to by every reviewer branch (concat reducer). */
   rawFindings: Finding[];
   merged?: MergedFinding[];
+  verified?: VerifiedFinding[];
   findings?: TriagedFinding[];
   verdict?: Verdict;
   verdictReason?: string;

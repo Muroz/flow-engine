@@ -36,6 +36,20 @@ export type Finding = {
   severity: Severity; // the reviewer's own opinion
   rationale: string;
   suggestion?: string;
+  /** On a later round: the title of an earlier finding this one would undo. */
+  reverses?: string;
+};
+
+/** What the verifier made of one finding, with the line or rule that shows it. */
+export type Verification = {
+  verdict: "valid" | "invalid" | "conflict";
+  evidence: string;
+  /** For a conflict: the ADR, standard, criterion or earlier request the fix would break. */
+  conflictsWith?: string;
+  /** The highest severity an ADR or standard allows for this kind of finding. */
+  maxSeverity?: Severity;
+  /** False when the verifier gave no usable answer and the finding went through unchecked. */
+  checked: boolean;
 };
 
 /** A finding after the judge has scored it. */
@@ -44,6 +58,21 @@ export type TriagedFinding = Finding & {
   confidence: number; // 0..1 — how sure the judge is this is a real problem
   kept: boolean; // false = filtered as noise
   alsoRaisedBy?: string[]; // other reviewers that flagged the same thing
+  verification?: Verification;
+};
+
+/** One finding an earlier review round raised, and what happened to it. */
+export type PriorFinding = {
+  round: number;
+  reviewer: string;
+  severity: Severity;
+  title: string;
+  file?: string;
+  rationale: string;
+  /** sent: given to the agent to fix. declined: the agent refused it. escalated: left for you to decide. */
+  status: "sent" | "declined" | "escalated";
+  /** The agent's reason for declining, or what the finding conflicts with. */
+  note?: string;
 };
 
 export type Verdict = "pass" | "fix" | "escalate";

@@ -111,7 +111,7 @@ Every command also takes these options:
 
 ## Model backends
 
-Each model role (`planner`, `reviewer`, `judge` and `implementer`) picks its backend by its model ID in `.flows.yaml`:
+Each model role (`planner`, `reviewer`, `verifier`, `judge` and `implementer`) picks its backend by its model ID in `.flows.yaml`:
 
 - An OpenRouter slug, such as `openai/gpt-5.5`, goes through OpenRouter with `OPENROUTER_API_KEY`.
 - `claude-code/<model>`, such as `claude-code/opus`, runs the `claude` CLI on your machine with its own sign-in. `claude-code/default` lets Claude Code pick the model.
@@ -137,7 +137,7 @@ OpenRouter gives you models from every vendor with one key, which matters becaus
 ```
 packages/
   core/       shared contracts, config, OpenRouter client, judges, artifact I/O, prompts, gate types
-  review/     specialist reviewers, dedupe, judge triage, verdict, report
+  review/     specialist reviewers, dedupe, verification, judge triage, verdict, report
   delivery/   plan, risk, implement, checks, review subgraph, gates
   planning/   discovery, scope, architecture options, ADRs, tasks, coverage check
   cli/        the flows command and the terminal gate driver

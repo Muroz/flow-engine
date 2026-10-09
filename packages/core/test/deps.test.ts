@@ -42,10 +42,10 @@ function withEnv(vars: Record<string, string | undefined>, fn: () => void) {
 
 const noKeys = { OPENROUTER_API_KEY: undefined, TYPESAFE_API_KEY: undefined, FLOWS_OFFLINE: undefined, FLOWS_CLAUDE_CODE: undefined };
 
-test("rolesInUse counts the judge only when the LLM judge answers", () => {
+test("rolesInUse counts the judge only when the LLM judge answers; the verifier always runs", () => {
   const cfg = project({});
-  assert.deepEqual(rolesInUse(cfg, "llm").map((r) => r.role), ["planner", "reviewer", "judge"]);
-  assert.deepEqual(rolesInUse(cfg, "jev").map((r) => r.role), ["planner", "reviewer"]);
+  assert.deepEqual(rolesInUse(cfg, "llm").map((r) => r.role), ["planner", "reviewer", "verifier", "judge"]);
+  assert.deepEqual(rolesInUse(cfg, "jev").map((r) => r.role), ["planner", "reviewer", "verifier"]);
 });
 
 test("a run with every role on Claude Code needs no OpenRouter key", () => {
@@ -58,7 +58,7 @@ test("a run with every role on Claude Code needs no OpenRouter key", () => {
 
 test("a mixed run names the roles that still need the OpenRouter key", () => {
   withEnv(noKeys, () => {
-    assert.throws(() => createDeps(project({ default: "claude-code/sonnet" })), /reviewer \(openai\/gpt-5\.5\), judge/);
+    assert.throws(() => createDeps(project({ default: "claude-code/sonnet" })), /reviewer \(openai\/gpt-5\.5\), verifier \(openai\/gpt-5\.4-mini\), judge/);
   });
   withEnv({ ...noKeys, OPENROUTER_API_KEY: "k" }, () => {
     assert.deepEqual(createDeps(project({ default: "claude-code/sonnet" })).backends, ["openrouter", "claude-code"]);

@@ -80,6 +80,10 @@ const MOCK_CONFIDENCE: Record<Severity, number> = { nit: 0.45, minor: 0.7, major
 
 export function registerReviewMocks(deps: FlowDeps): void {
   if (deps.model instanceof MockModelClient) {
+    // The fake verifier accepts every finding, so offline runs keep the heuristics' results.
+    deps.model.register((req) =>
+      req.tag === "review.verify" ? JSON.stringify({ verdict: "valid", evidence: "Offline run: accepted without checking." }) : undefined,
+    );
     deps.model.register((req) => {
       const id = req.tag.match(/^review\.(\w+)$/)?.[1];
       const h = id ? HEURISTICS[id] : undefined;

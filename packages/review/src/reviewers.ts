@@ -9,7 +9,7 @@
  * To add a reviewer: add an entry here, add prompts/review/<id>.md, and list
  * the id under `review.reviewers` in .flows.yaml.
  */
-import { adrHeading, splitDiff, writingRules } from "@flows/core";
+import { adrHeading, render, splitDiff, writingRules, type AdrRef, type PriorFinding } from "@flows/core";
 import type { ReviewContext } from "./state";
 
 export type ReviewerSpec = {
@@ -32,6 +32,7 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
     view: (ctx) => ({
       task_title: `${ctx.task!.id}: ${ctx.task!.title}`,
       acceptance_criteria: bullets(ctx.task!.acceptanceCriteria),
+      decisions: decisionsText(adrsNamedIn(ctx.task!.acceptanceCriteria, ctx.allAdrs)),
       diff: ctx.diff,
     }),
   },
@@ -63,9 +64,7 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
     prompt: "review/architecture",
     appliesTo: (ctx) => ctx.adrs.length > 0 || ctx.conventions.length > 0 || ctx.standards.some((s) => s.reviewers.includes("architecture")),
     view: (ctx) => ({
-      decisions: ctx.adrs.length
-        ? ctx.adrs.map((a) => `### ${adrHeading(a)}\n${a.decision}`).join("\n\n")
-        : "(none)",
+      decisions: decisionsText(ctx.adrs),
       conventions: bullets(ctx.conventions),
       diff: ctx.diff,
     }),
@@ -78,6 +77,33 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
     view: (ctx) => ({ writing_rules: writingRules("developer"), diff: docsDiff(ctx.diff) }),
   },
 };
+
+export const decisionsText = (adrs: AdrRef[]) =>
+  adrs.length ? adrs.map((a) => `### ${adrHeading(a)}\n${a.decision}`).join("\n\n") : "(none)";
+
+/** The ADRs that acceptance criteria mention by ID, such as "as ADR-0006 scopes it". */
+export function adrsNamedIn(criteria: string[], adrs: AdrRef[]): AdrRef[] {
+  const named = new Set(criteria.join("\n").match(/ADR-\d{4}/g) ?? []);
+  return adrs.filter((a) => named.has(a.id));
+}
+
+/** Earlier rounds' findings, one line each, for reviewers and the verifier. */
+export function priorText(prior: PriorFinding[]): string {
+  if (!prior.length) return "(none)";
+  return prior
+    .map((p) => {
+      const where = p.file ? ` (${p.file})` : "";
+      const note = p.note ? ` Note: ${p.note}` : "";
+      return `- round ${p.round}, ${p.status}: [${p.severity}] ${p.title}${where}, from ${p.reviewer}. ${p.rationale}${note}`;
+    })
+    .join("\n");
+}
+
+/** The later-round rules, or nothing on a first round. */
+export function laterRound(ctx: ReviewContext, template: string): string {
+  if (!ctx.prior.length) return "";
+  return render(template, { prior: priorText(ctx.prior), delta: ctx.delta?.trim() || "(the agent changed nothing since the last round)" }) + "\n";
+}
 
 const DOC_FILE = /\.(md|mdx|txt|rst)$/i;
 const ADDED_COMMENT = /^\+(?!\+\+)\s*(\/\/|\/\*|\*|#(?!!))/m;

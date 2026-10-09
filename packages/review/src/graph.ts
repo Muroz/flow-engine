@@ -3,7 +3,7 @@
  *
  *   START → loadContext ─┬─► reviewer(spec)         ─┐
  *                        ├─► reviewer(correctness)  ─┤
- *                        ├─► reviewer(security)     ─┼─► aggregate → triage → decide → writeReport → END
+ *                        ├─► reviewer(security)     ─┼─► aggregate → verify → triage → decide → writeReport → END
  *                        ├─► reviewer(tests)        ─┤
  *                        └─► reviewer(architecture) ─┘
  *
@@ -14,9 +14,9 @@
  */
 import type { FlowDeps, Finding, LogEntry, TriagedFinding, Verdict } from "@flows/core";
 import { Annotation, END, Send, START, StateGraph } from "@langchain/langgraph";
-import { aggregate, decide, loadContext, report, reviewer, triage } from "./nodes";
+import { aggregate, decide, loadContext, report, reviewer, triage, verify } from "./nodes";
 import { activeReviewers } from "./reviewers";
-import type { MergedFinding, ReviewContext, ReviewInput, ReviewState } from "./state";
+import type { MergedFinding, ReviewContext, ReviewInput, ReviewState, VerifiedFinding } from "./state";
 
 const concat = <T>(a: T[], b: T[]): T[] => a.concat(b);
 
@@ -27,6 +27,7 @@ export const ReviewAnnotation = Annotation.Root({
   currentReviewer: Annotation<string | undefined>,
   rawFindings: Annotation<Finding[]>({ reducer: concat, default: () => [] }),
   merged: Annotation<MergedFinding[] | undefined>,
+  verified: Annotation<VerifiedFinding[] | undefined>,
   findings: Annotation<TriagedFinding[] | undefined>,
   verdict: Annotation<Verdict | undefined>,
   verdictReason: Annotation<string | undefined>,
@@ -46,13 +47,15 @@ export function buildReviewGraph(deps: FlowDeps) {
     .addNode("loadContext", loadContext(deps))
     .addNode("reviewer", reviewer(deps))
     .addNode("aggregate", aggregate)
+    .addNode("verify", verify(deps))
     .addNode("triage", triage(deps))
     .addNode("decide", decide(deps))
     .addNode("writeReport", report)
     .addEdge(START, "loadContext")
     .addConditionalEdges("loadContext", fanOut, ["reviewer", "aggregate"])
     .addEdge("reviewer", "aggregate")
-    .addEdge("aggregate", "triage")
+    .addEdge("aggregate", "verify")
+    .addEdge("verify", "triage")
     .addEdge("triage", "decide")
     .addEdge("decide", "writeReport")
     .addEdge("writeReport", END)

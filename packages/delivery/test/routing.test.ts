@@ -86,3 +86,30 @@ test("the agent's prompt lists the project standards to read first", async () =>
   assert.match(prompt, /Read these project standards before you start[\s\S]*- docs\/standards\/modules\.md/);
   assert.match(prompt, /AUDIENCE: A developer/);
 });
+
+test("the agent may decline a note, and the declines match the ledger by title", async () => {
+  const { parseDeclines, openItems } = await import("../src/nodes");
+  const ledger = [
+    { round: 3, reviewer: "correctness", severity: "major" as const, title: "Move the shared database client under src/lib", rationale: "", status: "sent" as const },
+  ];
+  const text = "Fixed the rest.\n\nDeclined: [major] Move the shared database client under src/lib — ADR-0007 puts it in src/db/client.ts\n";
+  const declined = parseDeclines(text, ledger, 4);
+  assert.equal(declined.length, 1);
+  assert.equal(declined[0]!.reviewer, "correctness");
+  assert.equal(declined[0]!.status, "declined");
+  assert.equal(declined[0]!.round, 4);
+  assert.match(declined[0]!.note!, /ADR-0007/);
+  assert.deepEqual(parseDeclines("All fixed.", ledger, 4), []);
+  assert.deepEqual(openItems([...ledger, ...declined]), [
+    "round 4, declined by the agent: Move the shared database client under src/lib (ADR-0007 puts it in src/db/client.ts)",
+  ]);
+  assert.deepEqual(openItems(ledger), [], "a sent finding isn't open");
+});
+
+test("a follow-up round tells the agent how to decline a note", async () => {
+  const { agentPrompt } = await import("../src/nodes");
+  const cfg = { ...deps, config: { ...deps.config, artifactsDir: "/nowhere", conventions: [], standards: [] } as unknown as ProjectConfig };
+  const task = { id: "T-1", title: "Thing", requirementIds: [], adrRefs: [], dependsOn: [], acceptanceCriteria: ["works"], risk: "low" as const };
+  assert.match(agentPrompt(s({ task, fixNotes: ["[major] X"] }), cfg), /Declined: <note title> — <reason>/);
+  assert.doesNotMatch(agentPrompt(s({ task }), cfg), /Declined:/);
+});

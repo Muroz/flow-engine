@@ -101,7 +101,7 @@ Each run's first line names the judge it uses, for example `judge llm`. Check it
 
 These settings live under `review:` in `.flows.yaml`:
 
-- **`minConfidence`**, default 0.6: raise it if reviews are noisy, and lower it if they miss things.
+- **`minConfidence`**, default 0.6: applies only to findings the verifier couldn't check. The verifier handles the rest; the report lists what it dropped under "Dropped by verification", so read that section if reviews start missing things.
 - **`dropSeverities`**: add `minor` if you only want blocking issues.
 - **`escalateAtSeverity`**: set it to `major` and the flow asks you more often.
 
