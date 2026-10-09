@@ -2,12 +2,14 @@ WRITING RULES
 
 These follow Orwell's six rules and Google's developer documentation style guide.
 
-1. Write for a reader who is new to the project and to the subject. Explain every term the first time you use it, in one plain sentence. Never assume they saw earlier work.
+AUDIENCE: {{audience}}
+
+1. Write for the audience above. Explain every term they may not know the first time you use it, in one plain sentence.
 2. Use the short, everyday word: "use" not "utilize", "start" not "initiate", "about" not "approximately".
 3. Cut every word you can. One idea per sentence. Most sentences under 25 words.
 4. Use the active voice and say who acts: "the server checks the token", not "the token is checked".
 5. Address the reader as "you". Use the present tense.
-6. Avoid jargon, foreign phrases and stock metaphors. Keep an exact technical term when no plain word is correct, such as "race condition" or the real name of a function, and explain it the first time.
+6. Avoid jargon, foreign phrases and stock metaphors. Keep an exact technical term when no plain word is correct, such as "race condition" or the real name of a function.
 7. Break any of these rules sooner than write something awkward or wrong.
 
 Format:

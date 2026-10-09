@@ -80,6 +80,8 @@ export async function drive<S>(graph: Checkpointed, input: unknown, threadId: st
       const snapshot = await graph.getState(thread);
       const request = snapshot.tasks.flatMap((t) => t.interrupts ?? [])[0]?.value as GateRequest | undefined;
       if (!request) return { status: "done", values: snapshot.values as S };
+      const spent = ((snapshot.values as { log?: LogEntry[] }).log ?? []).reduce((sum, e) => sum + (e.costUsd ?? 0), 0);
+      print(`\n  spent so far: $${spent.toFixed(2)}`);
 
       const choices = [...request.options, ...(gateStack.length ? [BACK] : []), PAUSE];
       showGate(request, choices, print);
@@ -101,22 +103,46 @@ export async function drive<S>(graph: Checkpointed, input: unknown, threadId: st
   }
 }
 
-async function runWithProgress(graph: Checkpointed, input: unknown, config: RunConfig, print: (line: string) => void) {
+/**
+ * Streams a graph run and prints one line per finished step, with its
+ * details, plus live lines a step sends while it works (such as each tool the
+ * coding agent uses). Steps inside a subgraph print indented. Returns the
+ * last full state the run reached.
+ */
+export async function runWithProgress(
+  graph: Pick<Checkpointed, "stream">,
+  input: unknown,
+  config: RunConfig,
+  print: (line: string) => void,
+): Promise<unknown> {
   const ticker = workingTicker();
   let last = Date.now();
+  let values: unknown;
   try {
-    for await (const update of await graph.stream(input, { ...config, streamMode: "updates" })) {
-      for (const [node, value] of Object.entries(update)) {
+    const stream = await graph.stream(input, { ...config, streamMode: ["updates", "custom", "values"], subgraphs: true });
+    for await (const [namespace, mode, chunk] of stream as AsyncIterable<[string[], string, any]>) {
+      if (mode === "values") {
+        if (!namespace.length) values = chunk;
+        continue;
+      }
+      ticker.clear();
+      if (mode === "custom") {
+        if (chunk?.line) print(chunk.line);
+        continue;
+      }
+      const indent = "  ".repeat(namespace.length);
+      for (const [node, value] of Object.entries(chunk ?? {})) {
         if (node === "__interrupt__") continue;
         const log = ((value as { log?: LogEntry[] } | null)?.log ?? []).at(-1);
-        ticker.clear();
-        print(progressLine(node, log, (Date.now() - last) / 1000));
+        print(indent + progressLine(node, log, (Date.now() - last) / 1000));
+        for (const detail of limit(log?.details ?? [], 10)) print(`${indent}      ${detail}`);
         last = Date.now();
       }
     }
   } finally {
     ticker.stop();
   }
+  return values;
 }
 
 export function progressLine(node: string, log: LogEntry | undefined, seconds: number): string {
@@ -124,6 +150,8 @@ export function progressLine(node: string, log: LogEntry | undefined, seconds: n
   const note = log?.note ? `  ${log.note}` : "";
   return `  ✓ ${(log?.node ?? node).padEnd(28)} ${seconds.toFixed(1).padStart(5)}s${cost}${note}`;
 }
+
+const limit = (xs: string[], n: number) => (xs.length > n ? [...xs.slice(0, n), `… and ${xs.length - n} more`] : xs);
 
 /** On a terminal, a line that counts seconds while a node runs, so a slow model call never looks frozen. */
 function workingTicker() {

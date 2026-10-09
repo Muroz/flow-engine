@@ -29,6 +29,10 @@ delivery:
   checks:                         # run in the agent's worktree after each implementation attempt
     - npm test --silent
 
+standards:                        # the coding agent reads all of them; each reviewer gets the ones listed for it
+  - path: docs/standards/routes.md
+    reviewers: [architecture, correctness]
+
 conventions:
   - Route handlers live in src/routes and stay thin; logic goes in src/services.
   - Never log request bodies.

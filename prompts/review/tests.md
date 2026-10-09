@@ -6,6 +6,9 @@ CHANGED FILES:
 ACCEPTANCE CRITERIA (may be empty):
 {{acceptance_criteria}}
 
+PROJECT STANDARDS:
+{{standards}}
+
 DIFF:
 {{diff}}
 

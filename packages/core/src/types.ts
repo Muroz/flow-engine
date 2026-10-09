@@ -57,4 +57,6 @@ export type LogEntry = {
   model?: string;
   costUsd?: number;
   note?: string;
+  /** Extra lines the CLI prints under the step, such as each check's result. */
+  details?: string[];
 };

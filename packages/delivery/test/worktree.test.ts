@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ENGINE_ROOT } from "@flows/core";
-import { agentModel, ensureWorktree, worktreeDiff } from "../src/agents/claude-code";
+import { agentModel, describeEvent, ensureWorktree, worktreeDiff } from "../src/agents/claude-code";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
 
@@ -55,9 +55,26 @@ test("ensureWorktree refuses a folder inside a repo, so it never branches the wr
   assert.throws(() => ensureWorktree(join(repo, "sub"), "x", "T-001", "main"), /root of a git repository/);
 });
 
-test("agentModel takes the model from a claude-code/ implementer and ignores OpenRouter slugs", () => {
+test("agentModel takes the model from a claude-code/ implementer, else from claudeCode.model", () => {
   assert.equal(agentModel("claude-code/opus"), "opus");
   assert.equal(agentModel("claude-code/default"), undefined);
   assert.equal(agentModel("anthropic/claude-sonnet-5.5"), undefined);
   assert.equal(agentModel(undefined), undefined);
+  assert.equal(agentModel("anthropic/claude-sonnet-5.5", "opus"), "opus", "claudeCode.model applies when implementer isn't a claude-code model");
+  assert.equal(agentModel("claude-code/sonnet", "opus"), "sonnet");
+});
+
+test("describeEvent prints one line per tool call, with paths inside the worktree", () => {
+  const event = {
+    type: "assistant",
+    message: {
+      content: [
+        { type: "text", text: "Let me look." },
+        { type: "tool_use", name: "Edit", input: { file_path: "/w/T-001/src/app/page.tsx" } },
+        { type: "tool_use", name: "Bash", input: { command: "pnpm test" } },
+      ],
+    },
+  };
+  assert.deepEqual(describeEvent(event, ["/w/T-001"]), ["Edit src/app/page.tsx", "Bash pnpm test"]);
+  assert.deepEqual(describeEvent({ type: "result" }), []);
 });

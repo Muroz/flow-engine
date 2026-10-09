@@ -7,6 +7,9 @@ ACCEPTANCE CRITERIA:
 
 For each criterion that is missing, only partly met, or contradicted by the diff, report one finding. Do not report criteria that are met.
 
+PROJECT STANDARDS:
+{{standards}}
+
 DIFF:
 {{diff}}
 

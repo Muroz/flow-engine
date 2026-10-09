@@ -19,18 +19,29 @@ openrouter:
 judge:
   engine: auto
 
+claudeCode:
+  model: opus
+
 review:
   reviewers: [spec, correctness, security, tests, architecture, docs]
   minConfidence: 0.6
   escalateAtSeverity: blocker
   dropSeverities: [nit]
+  ignore: ["src/generated/**"]
 
 delivery:
   maxAttempts: 3
   autoApproveRisk: low
   agent: diff-file
+  maxCostUsd: 5
+  retryAttempts: 1
   checks:
     - npm test --silent
+
+standards:
+  - path: docs/standards/modules.md
+    reviewers: [architecture, correctness]
+  - docs/standards/naming.md
 
 conventions:
   - Route handlers live in src/routes and stay thin; logic goes in src/services.
@@ -58,7 +69,7 @@ Each role can use either backend, and one run can mix them.
 |---|---|---|
 | `models.default` | `anthropic/claude-sonnet-5.5` | Any role you don't set. |
 | `models.planner` | `models.default` | Delivery's plan and walkthrough, and every planning node except `compareOptions`. |
-| `models.implementer` | `models.default` | The Claude Code agent, when `delivery.agent` is `claude-code`. A `claude-code/<model>` ID sets its `--model`. An OpenRouter slug leaves the choice to Claude Code. |
+| `models.implementer` | `models.default` | The Claude Code agent, when `delivery.agent` is `claude-code`. A `claude-code/<model>` ID sets its `--model`. With an OpenRouter slug, the agent uses `claudeCode.model`. |
 | `models.reviewer` | `openai/gpt-5.5` | The review specialists and planning's `compareOptions`. Keep it on a different vendor from the implementer, so the checker isn't grading its own work. |
 | `models.judge` | `openai/gpt-5.4-mini` | The LLM judge. Only used when Jev isn't. |
 
@@ -85,6 +96,7 @@ Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provid
 | `review.minConfidence` | `0.6` | The judge drops findings it is less sure of than this. Raise it if reviews are noisy, and lower it if they miss things. |
 | `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped. `major` makes the flow ask you more often. |
 | `review.dropSeverities` | `[nit]` | Severities that never reach you. Add `minor` to see only blocking issues. |
+| `review.ignore` | `[]` | File patterns that review and walkthroughs skip, added to the built-in list of lockfiles, build output, source maps and snapshots. A pattern without a slash matches the file name in any folder, such as `*.generated.ts`. `**` matches any number of folders. |
 
 ### Delivery
 
@@ -95,12 +107,21 @@ Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provid
 | `delivery.checks` | `[]` | Shell commands run after each attempt, in the agent's worktree when there is one and in the repo when there isn't. Each has ten minutes. With none, checks count as passed. |
 | `delivery.maxAttempts` | `3` | The stop rule. After this many failed attempts, the flow asks you. |
 | `delivery.autoApproveRisk` | `low` | Plans at or below this risk skip the plan gate. `none` shows you every plan. `medium` only stops for high-risk plans. |
+| `delivery.maxCostUsd` | `5` | Model spend in US dollars after which a run stops and asks you. A `retry` or `fix` starts the count again. `0` turns the limit off. The Claude Code agent's spend doesn't count, because your Claude plan covers it. |
+| `delivery.retryAttempts` | `1` | Extra attempts you get when you choose `retry` at the escalate gate or `fix` at the merge gate. |
 
-### Conventions
+### Claude Code
+
+| Key | Default | Meaning |
+|---|---|---|
+| `claudeCode.model` | `opus` | The model for local Claude Code when a role doesn't name one: the coding agent, and every role under `--claude-code`. Use an alias such as `opus` or `sonnet`, or a full model name such as `claude-opus-5-5`. `default` lets Claude Code choose. |
+
+### Conventions and standards
 
 | Key | Default | Meaning |
 |---|---|---|
 | `conventions` | `[]` | Free-text team rules. The architecture reviewer checks against them, and the Claude Code agent gets them in its prompt. |
+| `standards` | `[]` | Project rules files, relative to the artifacts folder. Each entry has a `path` and the `reviewers` that check against it. A plain path is shorthand for `reviewers: [architecture]`. The Claude Code agent is told to read every file before it starts; each reviewer gets the text of its own. Commit the files to the base branch, because the agent reads them in its worktree. A missing file prints a warning and is skipped. |
 
 ## Environment variables
 

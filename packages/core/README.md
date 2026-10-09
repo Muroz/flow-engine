@@ -9,7 +9,8 @@ Core holds everything the flows share. It has no LangGraph code, so every flow c
 | `deps.ts` | `createDeps`, which builds the model client and judge once per run and checks that every role it will call has a backend. Nodes get them through `FlowDeps` and never read environment variables or build clients themselves. |
 | `models.ts` | `OpenRouterClient`, `ClaudeCodeClient`, `RoutingModelClient`, `MockModelClient` and `parseJsonReply`. |
 | `judge.ts` | The judge interface and its three engines: `JevJudge`, `LlmJudge` and `MockJudge`. |
-| `artifacts.ts` | Reads tasks, ADRs, the PRD and diffs, and writes run output under `runs/`. |
+| `artifacts.ts` | Reads tasks, standards, the PRD and diffs, and writes run output under `runs/`. |
+| `adrs.ts` | Reads ADRs with their status and relations, resolves the ADRs a task needs, and checks that links are recorded on both sides. See [ADR format](#adr-format). |
 | `prompts.ts` | `loadPrompt` reads `prompts/<name>.md`, and `render` fills in `{{placeholders}}`. |
 | `gates.ts` | `GateRequest` and `GateDecision`, the shapes a gate sends and gets back. |
 | `log.ts` | `logEntry` and `totalCost`. |
@@ -46,6 +47,15 @@ Every generative node calls `deps.model.complete` with a model ID. On a live run
 `ClaudeCodeClient` runs `claude -p` once per call with tools, settings and MCP servers turned off, and reads the reply from its JSON output. It takes a `ClaudeRunner` so tests can swap in a fake `claude`, as `test/models.test.ts` does.
 
 To add another backend, implement `ModelClient`, give it a prefix and add a route in `RoutingModelClient` and `createDeps`.
+
+## ADR format
+
+`adrs.ts` reads `docs/adr/NNNN-*.md` in the artifacts folder and skips other files, such as a README. Each ADR has these sections: Status, Relations, Context, Decision and Consequences.
+
+- **Status:** `Proposed`, `Accepted on <date>`, `Superseded by ADR-NNNN on <date>` or `Deprecated on <date>`. The parser reads the first word.
+- **Relations:** one line per link, such as `- Amends [ADR-0001](0001-name.md): what changes.` The kinds are `Supersedes`, `Superseded by`, `Amends`, `Amended by` and `Related to`. Each relation is recorded on both ADRs.
+
+`loadAdrs(config, ids)` follows the links when it gathers a task's ADRs. It swaps a superseded ADR for its replacement, adds any ADRs that amend one it returns, and skips deprecated ones. Without `ids`, it returns every ADR in force. `checkAdrs` lists one-sided links, links to missing ADRs and statuses that disagree with their relations. `flows adrs` prints both.
 
 ## Mocks
 

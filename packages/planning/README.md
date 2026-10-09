@@ -77,6 +77,8 @@ The terminal also offers `back` and `pause` at every gate. [The CLI README](../c
 
 `flows plan` writes a proposal to `runs/<project>/<run id>/proposed/`. Read it, then copy what you want into the project, or run again with `--write`.
 
+New ADRs follow the [ADR format](../core/README.md#adr-format) with the status `Proposed`. `writeAdrs` asks the model which ADRs in the set relate to each other, and `emit` records each `Related to` link on both ADRs. Accept or change them before you deliver the tasks that link to them.
+
 > **Warning:** `--write` writes straight into the artifacts folder and replaces `docs/prd.md`, `plan/tasks.yaml` and any ADR files with the same names.
 
 ## Tests

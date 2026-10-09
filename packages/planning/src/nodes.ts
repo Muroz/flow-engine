@@ -249,8 +249,13 @@ export const writeAdrs =
       }),
     });
     const { adrs = [] } = parseJsonReply<{ adrs?: Omit<DraftAdr, "id">[] }>(res.text, {});
+    // Models sometimes return a single string or junk for "related".
     return {
-      adrs: adrs.map((a, i) => ({ ...a, id: `ADR-${String(i + 1).padStart(4, "0")}` })),
+      adrs: adrs.map((a, i) => ({
+        ...a,
+        id: `ADR-${String(i + 1).padStart(4, "0")}`,
+        related: Array.isArray(a.related) ? a.related.map(String).filter((r) => /^ADR-\d{4}$/.test(r)) : [],
+      })),
       log: [logEntry("planning.adrs", { model: res.model, costUsd: res.costUsd, note: `${adrs.length} ADRs` })],
     };
   };
@@ -347,13 +352,48 @@ export const emit = (outDir: string) => async (s: PlanningState): Promise<Planni
     `${s.chosen?.summary ?? ""}`,
   ].join("\n");
   const files = [writeRunFile(outDir, "docs/prd.md", prd)];
-  for (const a of s.adrs) {
-    const body = `# ${a.id}: ${a.title}\n\n## Status\nProposed\n\n## Context\n${a.context}\n\n## Decision\n${a.decision}\n\n## Consequences\n${a.consequences}\n`;
-    files.push(writeRunFile(outDir, join("docs/adr", `${a.id.slice(4)}-${slugify(a.title)}.md`), body));
-  }
+  for (const a of s.adrs) files.push(writeRunFile(outDir, join("docs/adr", adrFileName(a)), renderAdr(a, s.adrs)));
   files.push(writeTasksYaml(outDir, s.tasks));
   return { emitted: files, log: [logEntry("planning.emit", { note: `${files.length} files → ${outDir}` })] };
 };
+
+const adrFileName = (a: DraftAdr) => `${a.id.slice(4)}-${slugify(a.title)}.md`;
+
+/**
+ * A new ADR in the project's format. "Related to" links are written on both
+ * ADRs, whichever one the model listed them under.
+ */
+export function renderAdr(a: DraftAdr, all: DraftAdr[]): string {
+  const byId = new Map(all.map((x) => [x.id, x]));
+  const related = new Set([
+    ...(a.related ?? []),
+    ...all.filter((x) => x.related?.includes(a.id)).map((x) => x.id),
+  ]);
+  related.delete(a.id);
+  const links = [...related]
+    .filter((id) => byId.has(id))
+    .sort()
+    .map((id) => `- Related to [${id}](${adrFileName(byId.get(id)!)})`);
+  return [
+    `# ${a.id}: ${a.title}`,
+    "",
+    "## Status",
+    "Proposed",
+    "",
+    "## Relations",
+    links.length ? links.join("\n") : "None.",
+    "",
+    "## Context",
+    a.context,
+    "",
+    "## Decision",
+    a.decision,
+    "",
+    "## Consequences",
+    a.consequences,
+    "",
+  ].join("\n");
+}
 
 // ── routing ─────────────────────────────────────────────────────────────────
 

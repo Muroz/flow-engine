@@ -5,7 +5,7 @@
  * Keeping the plain types separate means every node is an ordinary function
  * you can unit-test without spinning up a graph.
  */
-import type { AdrRef, Finding, LogEntry, PlannedTask, TriagedFinding, Verdict } from "@flows/core";
+import type { AdrRef, Finding, LogEntry, PlannedTask, Standard, TriagedFinding, Verdict } from "@flows/core";
 
 /** What the caller hands in. */
 export type ReviewInput = {
@@ -18,8 +18,13 @@ export type ReviewInput = {
 
 /** Loaded once by `loadContext`; each reviewer receives only a view of it. */
 export type ReviewContext = {
+  /** The diff without generated files. */
   diff: string;
   files: string[];
+  /** Generated files left out of the review, such as lockfiles. */
+  skipped: string[];
+  /** Project standards; each reviewer sees the ones listed for it. */
+  standards: Standard[];
   task?: PlannedTask;
   adrs: AdrRef[];
   conventions: string[];

@@ -8,6 +8,7 @@ A tiny order API that the sample flows run against. It isn't a working app. It h
 | `brief.md` | `pnpm plan:sample`. A returns portal brief with gaps on purpose, so the discovery loop runs. |
 | `docs/prd.md` | No flow reads it yet. `loadPrd` in `packages/core` is ready for the first one that does. |
 | `docs/adr/0001-repository-layer.md` | The architecture reviewer. All database access goes through `src/db/repository.ts`. |
+| `docs/standards/routes.md` | The architecture and correctness reviewers, and the coding agent, through `standards` in `.flows.yaml`. How route handlers validate input and handle errors. |
 | `plan/tasks.yaml` | `flows tasks`, `review --task` and `deliver`. Three tasks, T-001 to T-003. |
 | `changes/T-002.diff` | `pnpm review:sample` and `pnpm deliver:sample`. An attempt at T-002 with problems on purpose. |
 | `src/` | The code the diff applies to. |

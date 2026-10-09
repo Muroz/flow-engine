@@ -21,7 +21,9 @@ At each gate, the CLI prints a short summary and a numbered list of choices. Typ
 - **`discard`, `reject` and `abort`** ask you to confirm.
 - **`revise` and `adjust`** need notes and ask until you give some.
 
-While the graph runs, the CLI prints one line per finished step, with its time, cost and a short note. On a terminal, a counter shows how long the current step has been running.
+While a flow runs, the CLI prints one line per finished step, with its time, cost and a short note. Some steps add detail lines below: each check's result, the notes an attempt is addressing, or the findings a review kept. Review steps that delivery runs print indented. While the coding agent works, the CLI prints one line per tool it uses. On a terminal, a counter shows how long the current step has been running. Each gate starts with what the run has spent on model calls so far, in US dollars.
+
+`flows review` prints the same progress lines.
 
 `flows runs` lists paused runs. Add `--repo <dir>` to list only that project's runs.
 

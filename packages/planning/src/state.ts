@@ -26,7 +26,15 @@ export type ArchOption = {
   tradeoffs: string[];
 };
 
-export type DraftAdr = { id: string; title: string; context: string; decision: string; consequences: string };
+export type DraftAdr = {
+  id: string;
+  title: string;
+  context: string;
+  decision: string;
+  consequences: string;
+  /** Other ADRs in the same set to read with this one. */
+  related?: string[];
+};
 
 export type Coverage = { requirementId: string; p: number; covered: boolean };
 

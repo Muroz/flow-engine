@@ -7,6 +7,7 @@
  *   flows plan    --repo <dir> --brief brief.md [--write]
  *   flows tasks   --repo <dir> [--done T-001,T-002]
  *   flows explain --repo <dir> --task T-002 [--diff-file f | --base main --head HEAD]
+ *   flows adrs    --repo <dir>            ADR statuses and links, with broken links
  *   flows runs    [--repo <dir>]          paused runs
  *   flows resume  <run id>                pick a paused run up at its gate
  *
@@ -20,6 +21,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  allAdrs,
+  checkAdrs,
   createDeps,
   ENGINE_ROOT,
   findTask,
@@ -42,8 +45,8 @@ import {
   type DeliveryState,
 } from "@flows/delivery";
 import { buildPlanningGraph, registerPlanningMocks, type PlanningState } from "@flows/planning";
-import { registerReviewMocks, runReview } from "@flows/review";
-import { drive, type DriveResult } from "./drive";
+import { buildReviewGraph, registerReviewMocks, type ReviewState } from "@flows/review";
+import { drive, runWithProgress, type DriveResult } from "./drive";
 import { checkpointer, findRun, openRuns, saveRun, type RunRecord } from "./runs";
 
 // Load .env from the engine root if present (Node ≥ 20.12).
@@ -92,12 +95,29 @@ if (command === "resume") {
 }
 
 if (!command || !args.repo) {
-  console.error("usage: flows <review|deliver|plan|tasks|explain|runs|resume> --repo <dir> [options]  (see packages/cli/src/index.ts)");
+  console.error("usage: flows <review|deliver|plan|tasks|adrs|explain|runs|resume> --repo <dir> [options]  (see packages/cli/src/index.ts)");
   process.exit(1);
 }
 
 const abs = (p: string | undefined) => (p === undefined ? undefined : resolve(here, p));
 const config = loadConfig(abs(args.repo)!, abs(args.artifacts));
+
+if (command === "adrs") {
+  // No models needed: list the ADRs and check that every link is recorded on both sides.
+  const adrs = allAdrs(config);
+  for (const a of adrs) {
+    const links = a.relations.map((r) => `${r.kind.toLowerCase()} ${r.id}`).join(", ");
+    console.log(`${a.id} [${a.status}] ${a.title}${links ? `  · ${links}` : ""}`);
+  }
+  const problems = checkAdrs(adrs);
+  if (problems.length) {
+    console.log(`\n${problems.length} problem(s):`);
+    for (const p of problems) console.log(`  ✗ ${p}`);
+    process.exit(1);
+  }
+  console.log(`\n${adrs.length} ADRs, links consistent.`);
+  process.exit(0);
+}
 
 if (command === "tasks") {
   // No models needed: just show the task DAG and what's ready to pick up.
@@ -122,6 +142,12 @@ if (args.task && !task) {
 
 const models = deps.offline ? " · OFFLINE (mocks)" : ` · models ${deps.backends.join("+") || "none"}`;
 console.log(`▶ ${resumed ? "resume " : ""}${command} · project ${config.project} · judge ${deps.judge.name}${models}\n`);
+
+/** Runs the review flow with the same progress lines as the gated flows, and returns its final state. */
+function streamReview(input: unknown): Promise<unknown> {
+  const graph = buildReviewGraph(deps);
+  return runWithProgress({ stream: (i, c) => graph.stream(i, c) }, input, {}, (line) => console.log(line));
+}
 
 /**
  * Runs a gated graph with saved checkpoints. Returns the final state, or
@@ -148,7 +174,7 @@ switch (command) {
   case "review": {
     const runId = newRunId("review");
     const label = task ? `${task.id} ${task.title}` : args["diff-file"] ?? `${args.base}...${args.head}`;
-    const state = await runReview(deps, { diff: loadDiff(config, diffSource), task, label });
+    const state = (await streamReview({ input: { diff: loadDiff(config, diffSource), task, label } })) as ReviewState;
     const path = writeRunFile(runDir(config, runId), "review.md", state.report ?? "");
     console.log(state.report);
     console.log(`\n📄 ${path}`);

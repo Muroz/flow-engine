@@ -9,7 +9,7 @@
  * To add a reviewer: add an entry here, add prompts/review/<id>.md, and list
  * the id under `review.reviewers` in .flows.yaml.
  */
-import { loadPrompt } from "@flows/core";
+import { adrHeading, splitDiff, writingRules } from "@flows/core";
 import type { ReviewContext } from "./state";
 
 export type ReviewerSpec = {
@@ -61,10 +61,10 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
   architecture: {
     id: "architecture",
     prompt: "review/architecture",
-    appliesTo: (ctx) => ctx.adrs.length > 0 || ctx.conventions.length > 0,
+    appliesTo: (ctx) => ctx.adrs.length > 0 || ctx.conventions.length > 0 || ctx.standards.some((s) => s.reviewers.includes("architecture")),
     view: (ctx) => ({
       decisions: ctx.adrs.length
-        ? ctx.adrs.map((a) => `### ${a.id}: ${a.title}\n${a.decision}`).join("\n\n")
+        ? ctx.adrs.map((a) => `### ${adrHeading(a)}\n${a.decision}`).join("\n\n")
         : "(none)",
       conventions: bullets(ctx.conventions),
       diff: ctx.diff,
@@ -75,16 +75,38 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
     id: "docs",
     prompt: "review/docs",
     appliesTo: (ctx) => touchesDocs(ctx),
-    view: (ctx) => ({ writing_rules: loadPrompt("_writing"), diff: ctx.diff }),
+    view: (ctx) => ({ writing_rules: writingRules("developer"), diff: docsDiff(ctx.diff) }),
   },
 };
 
 const DOC_FILE = /\.(md|mdx|txt|rst)$/i;
 const ADDED_COMMENT = /^\+(?!\+\+)\s*(\/\/|\/\*|\*|#(?!!))/m;
 
+/** Doc files in full, and from code files only the hunks that add a comment. */
+export function docsDiff(diff: string): string {
+  return splitDiff(diff)
+    .map(({ file, text }) => {
+      if (DOC_FILE.test(file)) return text;
+      const [header, ...hunks] = text.split(/^(?=@@ )/m);
+      const commented = hunks.filter((h) => ADDED_COMMENT.test(h));
+      return commented.length ? header + commented.join("") : "";
+    })
+    .join("");
+}
+
 /** Runs when the diff changes a doc file or adds a comment line. */
 export function touchesDocs(ctx: ReviewContext): boolean {
   return ctx.files.some((f) => DOC_FILE.test(f)) || ADDED_COMMENT.test(ctx.diff);
+}
+
+/** The standards listed for one reviewer, ready for its prompt. A broken standard counts as major. */
+export function standardsFor(reviewerId: string, ctx: ReviewContext): string {
+  const mine = ctx.standards.filter((s) => s.reviewers.includes(reviewerId));
+  if (!mine.length) return "(none)";
+  return [
+    "The project's own rules. A change that breaks one is a major finding; cite the file.",
+    ...mine.map((s) => `### ${s.path}\n${s.text.trim()}`),
+  ].join("\n\n");
 }
 
 /** Reviewers enabled in config that apply to this context. */

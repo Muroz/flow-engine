@@ -5,34 +5,83 @@ The delivery flow takes one planned task from plan to merge gate. It writes a pl
 ## Graph
 
 ```
-START → makePlan → assessRisk ─┬─(low)──────────────► implement ◄─────────────┐
-                               └─(else)─► approvePlan ─┘   │                   │
-                                          (gate)           ▼                   │
-                                                       runChecks ─(fail, n<max)─┤
-                                                           │ pass               │
-                                                           ▼                    │
-                                                   runReview (subgraph) ─(fix, n<max)
-                                                           │ pass
-                                escalate (gate) ◄─(escalate, or n≥max)
-                                    │ accept               ▼
-                                    └──────────────► explainWork
-                                                           ▼
-                                                   approveMerge (gate) → END
+START → makePlan ◄──(revise)──────────────── approvePlan (gate)
+           ▼                                    ▲      │ approve
+        assessRisk ─(above autoApproveRisk)─────┘      ▼
+           └─(otherwise)──────────────────────────► implement ◄───────────────────────────┐
+                                                       ▼                                  │
+                                                   runChecks ─(fail, attempts left)───────┤
+                                                       ▼ pass                             │
+                                               runReview (subgraph) ─(fix, attempts left)─┤
+                                                       │ pass                             │
+         escalate (gate) ◄─(escalate, out of attempts or over budget)                     │
+           │ retry ───────────────────────────────────────────────────────────────────────┤
+           │ accept                                    ▼                                  │
+           └─────────────────────────────────► explainWork                                │
+                                                       ▼                                  │
+                                              approveMerge (gate) ─(fix)──────────────────┘
+                                                       ▼ merge or reject
+                                                      END
 ```
 
-You see the flow at most three times: the plan, only when it is risky; an escalation, only when the flow is stuck; and the merge. Each gate fits on one screen.
+The flow has three gates: the plan, only when it is risky; an escalation, only when the flow is stuck; and the merge. `revise`, `retry` and `fix` can bring you back to a gate. Each gate fits on one screen and links to a file with the full text.
 
 | Node | Kind | What it does |
 |---|---|---|
-| `makePlan` | Generative | Writes a short plan from the task, its acceptance criteria and its ADRs. |
+| `makePlan` | Generative | Writes a short plan from the task, its acceptance criteria and its ADRs. After a `revise`, it rewrites the plan from your notes. |
 | `assessRisk` | Judge | Rates the plan low, medium or high. It never rates below the risk that planning gave the task. |
-| `approvePlan` | Gate | Shows you the plan when its risk is above `delivery.autoApproveRisk`. |
+| `approvePlan` | Gate | Shows you the numbered steps and the acceptance criteria when the risk is above `delivery.autoApproveRisk`. Options: `approve`, `revise` with notes, or `reject`. |
 | `implement` | Agent | Writes the code. See [Agents](#agents). |
-| `runChecks` | Deterministic | Runs `delivery.checks` in the worktree. A failure becomes a note for the next attempt. |
-| `runReview` | Subgraph | Runs the review flow on the diff and the task, and maps back only the verdict, findings and report. |
-| `escalate` | Gate | Hit when attempts reach `delivery.maxAttempts` or review escalates. You can abort, retry with a fresh attempt count or accept the work as it is. |
+| `runChecks` | Deterministic | Runs `delivery.checks` in the worktree, in order, and records each command's result and time. It stops at the first failure, and the failure's output becomes a note for the next attempt. |
+| `runReview` | Subgraph | Runs the review flow on the diff and the task, and maps back only the verdict, findings and report. Each finding becomes a note for the next attempt, with the reviewer's reason. |
+| `escalate` | Gate | See [When the flow gets stuck](#when-the-flow-gets-stuck). |
 | `explainWork` | Generative | Writes `walkthrough.md`, a plain-language account of the work. See [Walkthroughs](#walkthroughs). |
-| `approveMerge` | Gate | Shows you the walkthrough's summary, the checks and the review, and links to the full walkthrough. It records your decision; it doesn't push or open a PR yet. On `merge`, it adds the task to the project journal. |
+| `approveMerge` | Gate | Shows the walkthrough's summary, each check's result, the review verdict and the open review comments, numbered. Options: `merge`, `fix` or `reject`. See [Fixing comments before you merge](#fixing-comments-before-you-merge). |
+
+## Rounds and what you see
+
+A round is one pass through `implement`, `runChecks` and `runReview`. While a round runs, the CLI prints each step as it finishes:
+
+- **implement:** the round and attempt number, such as `round 2, attempt 2/3`, then one line per note the agent is addressing. While the agent works, one line per tool it uses, such as `Edit src/app/page.tsx` or `Bash pnpm test`.
+- **checks:** one line per command, such as `✓ pnpm lint (4.1s)`, `✗ pnpm test (3.2s)` or `· pnpm build (not run)`.
+- **review:** each specialist's result and cost, then the findings it kept.
+
+`delivery.maxAttempts`, 3 by default, limits the rounds before the flow asks you. A `retry` or `fix` grants `delivery.retryAttempts` more, 1 by default.
+
+## Cost
+
+Each review round calls six specialists, so the review is most of a run's model cost. Three settings keep it down:
+
+- **Generated files stay out.** Review and walkthroughs skip lockfiles, build output, source maps and snapshots. `DEFAULT_REVIEW_IGNORE` in `packages/core/src/config.ts` lists them, and `review.ignore` adds your own patterns. The review's first progress line names the files it skipped.
+- **The docs reviewer reads less.** It sees doc files in full, but only the code hunks that add a comment.
+- **A cost limit stops the loop.** When a run's model spend reaches `delivery.maxCostUsd`, $5 by default, the flow stops and asks you. A `retry` or `fix` starts the count again.
+
+The Claude Code agent runs on your Claude plan. Its transcript reports a list price, which the implement line shows, but the run's model cost leaves it out.
+
+## When the flow gets stuck
+
+The escalate gate opens when the flow runs out of attempts, hits the cost limit, or a reviewer wants a person to look. It shows:
+
+- why it stopped, including the spend when it hit the cost limit
+- one line per review round so far, such as `round 2: fix: 2 major/blocker finding(s)`
+- the last check failure, if checks failed
+- every open finding, blocking ones first, each with its file, line and the reviewer's reason
+
+The full review report for the last round is linked from the gate. Options:
+
+- **`retry`** grants `delivery.retryAttempts` more attempts and starts the cost count again. Notes you add go to the agent.
+- **`accept`** takes the work as it is and moves on to the walkthrough and the merge gate.
+- **`abort`** ends the run, after you confirm.
+
+## Fixing comments before you merge
+
+When the review passes with minor comments, or you accept work with open findings, the merge gate numbers them. `fix` sends them back for `delivery.retryAttempts` more attempts, then the work goes through checks, review and the walkthrough again before you see the merge gate.
+
+Your notes pick what goes back:
+
+- No notes: every open comment.
+- Numbers, such as `1,3`: those comments. Add text after a colon, such as `1,3: also rename the helper`, to send it too.
+- Text alone: only your text.
 
 ## Agents
 
@@ -41,7 +90,7 @@ You see the flow at most three times: the plan, only when it is risky; an escala
 - **`diff-file`**, the default, replays the diff from `--diff-file` (or `git diff --base...--head`) on every attempt. The sample flow and the tests use it, and `--offline` always does.
 - **`claude-code`** runs Claude Code headless in a git worktree on branch `flows/<task>`. The code is in `src/agents/claude-code.ts`, and [docs/wiring.md](../../docs/wiring.md#3-coding-agent) explains how to turn it on.
 
-With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. A `claude-code/<model>` value in `models.implementer` picks its model. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
+With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. It also lists the project's `standards` files and tells the agent to read them first. In a follow-up round, it tells the agent to fix only those notes and leave the rest alone. `agentPrompt` in `src/nodes.ts` builds the prompt. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. A `claude-code/<model>` value in `models.implementer` picks its model. Otherwise it uses `claudeCode.model`, which defaults to `opus`. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
 
 ## Walkthroughs
 
@@ -78,12 +127,13 @@ It explains the changes in the task's worktree when one exists. Otherwise it exp
 Each run writes to `runs/<project>/<run id>/` in the engine:
 
 - `state.json` holds the final state, including the log.
+- `review-<round>.md` holds each round's review report.
+- `agent-<round>.json` holds Claude Code's final result for each round, and `agent-<round>.jsonl` every event it streamed. A failed agent run writes `agent-<round>.log` instead.
 - `review.md` holds the last review report.
-- `agent-attempt-<n>.json` holds each Claude Code transcript, or `.log` when the agent failed.
 - `walkthrough.md` holds the plain-language walkthrough.
 
 `runs/<project>/journal.md` lists every merged task.
 
 ## Tests
 
-`test/routing.test.ts` covers every conditional edge. `test/worktree.test.ts` runs the worktree helpers against a throwaway git repo. `test/walkthrough.test.ts` covers how the gate picks the walkthrough's summary. Run them with `pnpm test` from the engine root.
+`test/routing.test.ts` covers every conditional edge, the cost limit and how `fix` picks comments. `test/worktree.test.ts` runs the worktree helpers against a throwaway git repo and covers how agent steps print. `test/walkthrough.test.ts` covers how the gate picks the walkthrough's summary. Run them with `pnpm test` from the engine root.

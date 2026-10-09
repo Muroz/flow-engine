@@ -1,0 +1,1 @@
+A developer who knows the stack, such as TypeScript, Next.js, Postgres, pnpm and environment variables, but not this project. Don't explain standard technology or tools. Explain this project's own terms, decisions and conventions the first time, and link to the ADR or standard that records them.

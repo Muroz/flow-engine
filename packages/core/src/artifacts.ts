@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import type { ProjectConfig } from "./config";
+import type { ProjectConfig, StandardRef } from "./config";
 import type { PlannedTask } from "./types";
 
 // ── Tasks ───────────────────────────────────────────────────────────────────
@@ -45,37 +45,20 @@ export function readyTasks(tasks: PlannedTask[], done: Set<string>): PlannedTask
   return tasks.filter((t) => !done.has(t.id) && t.dependsOn.every((d) => done.has(d)));
 }
 
-// ── ADRs & PRD ──────────────────────────────────────────────────────────────
+// ── Standards & PRD ──────────────────────────────────────────────────────────────
 
-export type AdrRef = {
-  id: string; // "ADR-0001"
-  title: string;
-  path: string;
-  /** The "Decision" section, trimmed — enough for a reviewer, not the whole doc. */
-  decision: string;
-};
+export type Standard = StandardRef & { text: string };
 
-export function loadAdrs(config: ProjectConfig, only?: string[]): AdrRef[] {
-  const dir = join(config.artifactsDir, "docs", "adr");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".md"))
-    .sort()
-    .map((f) => parseAdr(join(dir, f)))
-    .filter((a) => !only || only.length === 0 || only.includes(a.id));
-}
-
-function parseAdr(path: string): AdrRef {
-  const text = readFileSync(path, "utf8");
-  const heading = text.match(/^#\s+(ADR-\d+)[:\s-]*(.*)$/m);
-  const num = path.match(/(\d{4})/)?.[1] ?? "0000";
-  const decision = text.match(/##\s+Decision\s*\n([\s\S]*?)(\n##\s|$)/)?.[1]?.trim() ?? "";
-  return {
-    id: heading?.[1] ?? `ADR-${num}`,
-    title: heading?.[2]?.trim() ?? path,
-    path,
-    decision: decision.slice(0, 800),
-  };
+/** The project's standards files with their text. A missing file is skipped with a warning. */
+export function loadStandards(config: ProjectConfig): Standard[] {
+  return config.standards.flatMap((ref) => {
+    const file = resolve(config.artifactsDir, ref.path);
+    if (!existsSync(file)) {
+      console.warn(`standards: ${ref.path} not found in ${config.artifactsDir}, skipped`);
+      return [];
+    }
+    return [{ ...ref, text: readFileSync(file, "utf8") }];
+  });
 }
 
 export function loadPrd(config: ProjectConfig): { path: string; text: string } | undefined {
@@ -93,6 +76,40 @@ export function loadDiff(config: ProjectConfig, source: DiffSource): string {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
   });
+}
+
+/** One entry per file in a unified diff. */
+export function splitDiff(diff: string): { file: string; text: string }[] {
+  return diff
+    .split(/^(?=diff --git )/m)
+    .filter((part) => part.startsWith("diff --git "))
+    .map((text) => ({ file: text.match(/^diff --git a\/\S+ b\/(\S+)/)?.[1] ?? "", text }));
+}
+
+/**
+ * Drops files no reviewer should read, such as lockfiles and build output.
+ * A pattern without a slash matches the file name in any folder.
+ */
+export function filterDiff(diff: string, ignore: string[]): { diff: string; skipped: string[] } {
+  const rules = ignore.map((p) => ({ re: globToRegExp(p), name: !p.includes("/") }));
+  const ignored = (file: string) => rules.some((r) => r.re.test(r.name ? file.split("/").pop()! : file));
+  const parts = splitDiff(diff);
+  if (!parts.length) return { diff, skipped: [] };
+  return {
+    diff: parts.filter((p) => !ignored(p.file)).map((p) => p.text).join(""),
+    skipped: parts.filter((p) => ignored(p.file)).map((p) => p.file),
+  };
+}
+
+function globToRegExp(glob: string): RegExp {
+  const re = glob
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*\//g, "\u0000")
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]")
+    .replace(/\u0000/g, "(?:.*/)?");
+  return new RegExp(`^${re}$`);
 }
 
 export function changedFiles(diff: string): string[] {

@@ -6,6 +6,9 @@ DECISIONS (ADRs):
 CONVENTIONS:
 {{conventions}}
 
+PROJECT STANDARDS:
+{{standards}}
+
 DIFF:
 {{diff}}
 

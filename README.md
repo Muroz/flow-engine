@@ -95,6 +95,7 @@ Without `--yes`, each human gate asks you in the terminal. Every gate also offer
 | `flows deliver --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Takes one task from plan to merge gate. `delivery.agent` in `.flows.yaml` picks who writes the code. |
 | `flows plan --repo <dir> --brief <file> [--write]` | Turns a brief into a PRD, ADRs and tasks. Writes a proposal under `runs/` unless you pass `--write`. |
 | `flows tasks --repo <dir> [--done T-001,T-002]` | Prints the task list and marks which tasks are ready to start. Needs no keys. |
+| `flows adrs --repo <dir>` | Lists the ADRs with their status and relations, and exits with code 1 if a link is broken. Needs no keys. |
 | `flows runs [--repo <dir>]` | Lists paused runs. |
 | `flows resume <run id>` | Picks a paused run up at the gate where you paused it. |
 | `flows explain --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Writes a plain-language walkthrough of a task's changes. Delivery writes one before every merge gate; use this for work you want explained again. |

@@ -6,9 +6,12 @@ Report:
 - Comments that restate what the code plainly does. Suggest deleting them.
 - Docs that contradict the code in the same diff.
 
-Use "minor" for text that misleads or confuses a reader, and "nit" for style. Use "major" only when the docs give wrong instructions, such as a command that won't work.
+Use "minor" for text that misleads or confuses a reader, or gives wrong instructions, and "nit" for style. Docs findings never block a merge, so never use "major" or "blocker".
 
 {{writing_rules}}
+
+PROJECT STANDARDS:
+{{standards}}
 
 DIFF:
 {{diff}}

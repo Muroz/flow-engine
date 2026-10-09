@@ -7,11 +7,14 @@ import { appendFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   changedFiles,
+  filterDiff,
+  reviewIgnore,
   ENGINE_ROOT,
   loadPrompt,
   logEntry,
   modelFor,
   render,
+  writingRules,
   runDir,
   writeRunFile,
   type FlowDeps,
@@ -34,18 +37,19 @@ const MAX_DIFF_CHARS = 60_000;
 const bullets = (xs: string[]) => (xs.length ? xs.map((x) => `- ${x}`).join("\n") : "(none)");
 
 export async function writeWalkthrough(deps: FlowDeps, input: WalkthroughInput): Promise<{ walkthrough: Walkthrough; log: LogEntry }> {
-  const { task, diff, plan, review } = input;
+  const { task, plan, review } = input;
+  const { diff, skipped } = filterDiff(input.diff, reviewIgnore(deps.config));
   const res = await deps.model.complete({
     tag: "delivery.walkthrough",
     model: modelFor(deps.config, "planner"),
     system: "You explain software changes to people who don't read code.",
     user: render(loadPrompt("delivery/walkthrough"), {
-      writing_rules: loadPrompt("_writing"),
+      writing_rules: writingRules("owner"),
       task: `${task.id}: ${task.title}`,
       acceptance_criteria: bullets(task.acceptanceCriteria),
       plan: plan ? `${plan.summary}\n${bullets(plan.steps)}` : "(no plan recorded)",
       review: review ? `${review.verdict}: ${review.reason}` : "(not reviewed)",
-      files: bullets(changedFiles(diff)),
+      files: bullets([...changedFiles(diff), ...skipped.map((f) => `${f} (generated, not shown)`)]),
       diff: diff.length > MAX_DIFF_CHARS ? `${diff.slice(0, MAX_DIFF_CHARS)}\n[diff cut at ${MAX_DIFF_CHARS} characters]` : diff,
     }),
   });

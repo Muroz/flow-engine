@@ -44,6 +44,8 @@ export type ProjectConfig = {
     escalateAtSeverity: Severity;
     /** Severities that never reach you, whatever the confidence. */
     dropSeverities: Severity[];
+    /** Files left out of every review and walkthrough. Added to DEFAULT_REVIEW_IGNORE. */
+    ignore: string[];
   };
 
   delivery: {
@@ -61,11 +63,41 @@ export type ProjectConfig = {
     agent: "diff-file" | "claude-code";
     /** Claude Code tool allow-list. Defaults to read/edit tools plus one Bash rule per check. */
     agentTools?: string[];
+    /** Model spend in US dollars after which a run stops and asks you. 0 turns the limit off. */
+    maxCostUsd: number;
+    /** Extra attempts a "retry" at the escalate gate or a "fix" at the merge gate grants. */
+    retryAttempts: number;
   };
+
+  /** The model for local Claude Code when a role doesn't name one: an alias such as "opus", or a full model name. */
+  claudeCodeModel: string;
 
   /** Free-text team conventions handed to reviewers ("we use pnpm", "no default exports"). */
   conventions: string[];
+
+  /** Project standards files. The coding agent reads them all; each reviewer gets the ones listed for it. */
+  standards: StandardRef[];
 };
+
+export type StandardRef = {
+  /** Relative to the artifacts folder, such as docs/standards/testing.md. */
+  path: string;
+  /** Reviewer IDs that check against this file. */
+  reviewers: string[];
+};
+
+/** A plain path is shorthand for a standard only the architecture reviewer checks. */
+export function parseStandards(raw: unknown): StandardRef[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): StandardRef[] => {
+    if (typeof entry === "string") return [{ path: entry, reviewers: ["architecture"] }];
+    if (entry && typeof entry.path === "string") {
+      const reviewers = Array.isArray(entry.reviewers) ? entry.reviewers.map(String) : ["architecture"];
+      return [{ path: entry.path, reviewers }];
+    }
+    return [];
+  });
+}
 
 const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
   // Slugs from https://openrouter.ai/models. Keep the reviewer on a different vendor from the implementer.
@@ -81,14 +113,19 @@ const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
     minConfidence: 0.6,
     escalateAtSeverity: "blocker",
     dropSeverities: ["nit"],
+    ignore: [],
   },
   delivery: {
     maxAttempts: 3,
     autoApproveRisk: "low",
     checks: [],
     agent: "diff-file",
+    maxCostUsd: 5,
+    retryAttempts: 1,
   },
+  claudeCodeModel: "opus",
   conventions: [],
+  standards: [],
 };
 
 /**
@@ -124,8 +161,31 @@ export function loadConfig(repoDir: string, artifactsDir?: string): ProjectConfi
     review: { ...DEFAULTS.review, ...(raw.review ?? {}) },
     delivery: { ...DEFAULTS.delivery, ...(raw.delivery ?? {}) },
     conventions: raw.conventions ?? DEFAULTS.conventions,
+    standards: parseStandards(raw.standards),
+    claudeCodeModel: raw.claudeCode?.model ?? DEFAULTS.claudeCodeModel,
   };
 }
+
+/** Generated files: they make reviews expensive and no reviewer can judge them. */
+export const DEFAULT_REVIEW_IGNORE = [
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "bun.lockb",
+  "Cargo.lock",
+  "poetry.lock",
+  "go.sum",
+  "*.min.js",
+  "*.min.css",
+  "*.map",
+  "*.snap",
+  "**/dist/**",
+  "**/build/**",
+  "**/.next/**",
+  "**/coverage/**",
+];
+
+export const reviewIgnore = (config: ProjectConfig) => [...DEFAULT_REVIEW_IGNORE, ...config.review.ignore];
 
 /** The model a given role should use, falling back to the default. */
 export function modelFor(config: ProjectConfig, role: keyof ProjectConfig["models"]): string {

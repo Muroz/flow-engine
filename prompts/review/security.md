@@ -2,6 +2,9 @@ Your only job: find security problems introduced by this change — injection (S
 
 Be concrete: name the input that reaches the dangerous sink. Do not report hypothetical issues in code that is not in the diff.
 
+PROJECT STANDARDS:
+{{standards}}
+
 DIFF:
 {{diff}}
 

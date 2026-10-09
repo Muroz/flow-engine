@@ -11,6 +11,9 @@
  */
 import {
   changedFiles,
+  filterDiff,
+  loadStandards,
+  reviewIgnore,
   loadAdrs,
   loadPrompt,
   logEntry,
@@ -26,7 +29,7 @@ import {
   type Severity,
   type TriagedFinding,
 } from "@flows/core";
-import { REVIEWERS } from "./reviewers";
+import { REVIEWERS, standardsFor } from "./reviewers";
 import type { MergedFinding, ReviewState, ReviewUpdate } from "./state";
 
 // ── loadContext ─────────────────────────────────────────────────────────────
@@ -34,11 +37,24 @@ import type { MergedFinding, ReviewState, ReviewUpdate } from "./state";
 export const loadContext =
   (deps: FlowDeps) =>
   async (state: ReviewState): Promise<ReviewUpdate> => {
-    const { diff, task } = state.input;
+    const filtered = filterDiff(state.input.diff, reviewIgnore(deps.config));
+    const { skipped } = filtered;
+    // Say what was left out, or reviewers report those files as missing.
+    const diff = skipped.length
+      ? `Generated files this change also adds or edits, left out to save space: ${skipped.join(", ")}\n\n${filtered.diff}`
+      : filtered.diff;
+    const { task } = state.input;
     const adrs = loadAdrs(deps.config, task?.adrRefs);
+    const files = changedFiles(diff);
+    const standards = loadStandards(deps.config);
     return {
-      context: { diff, files: changedFiles(diff), task, adrs, conventions: deps.config.conventions },
-      log: [logEntry("review.loadContext", { note: `${changedFiles(diff).length} files, ${adrs.length} ADRs` })],
+      context: { diff, files, skipped, task, adrs, conventions: deps.config.conventions, standards },
+      log: [
+        logEntry("review.loadContext", {
+          note: `${files.length} files, ${adrs.length} ADRs, ${standards.length} standards, ${Math.round(diff.length / 1000)}k characters`,
+          details: skipped.length ? [`not reviewed (generated): ${skipped.join(", ")}`] : undefined,
+        }),
+      ],
     };
   };
 
@@ -51,7 +67,11 @@ export const reviewer =
     if (!spec || !state.context) return {};
 
     const template = loadPrompt(spec.prompt);
-    const user = render(template, { ...spec.view(state.context), output_format: loadPrompt("review/_output") });
+    const user = render(template, {
+      ...spec.view(state.context),
+      standards: standardsFor(spec.id, state.context),
+      output_format: loadPrompt("review/_output"),
+    });
 
     const res = await deps.model.complete({
       tag: `review.${spec.id}`,
@@ -123,6 +143,15 @@ function titleOverlap(a: string, b: string): number {
 
 // ── triage (judge) ──────────────────────────────────────────────────────────
 
+/** The same scale the reviewers use (prompts/review/_output.md), so the judge doesn't invent its own. */
+export const SEVERITY_QUESTION =
+  "How severe is the problem if merged as-is? blocker: a security hole in code that runs, data loss, or a broken build. " +
+  "major: a bug in code that runs, a missed acceptance criterion, or a broken ADR or project standard. " +
+  "minor: hardening beyond what the task asks, unusual ways around a rule, or unclear docs. nit: taste. " +
+  "If neither the task nor an ADR nor a project standard asks for it, it is minor at most. " +
+  "Docs and comments are minor at most. " +
+  "Asking the change to build something a later task will build, rather than fixing something it contradicts, is minor at most.";
+
 export const triage =
   (deps: FlowDeps) =>
   async (state: ReviewState): Promise<ReviewUpdate> => {
@@ -134,17 +163,21 @@ export const triage =
     const findings: TriagedFinding[] = await Promise.all(
       merged.map(async (f) => {
         const a = await deps.judge.ask(
-          { finding: f, code: fileDiff(state.input.diff, f.file) },
+          {
+            finding: f,
+            code: fileDiff(state.input.diff, f.file),
+            task: state.input.task ? { title: state.input.task.title, acceptanceCriteria: state.input.task.acceptanceCriteria } : undefined,
+          },
           {
             real: noul(
               "Is this finding a real, actionable problem introduced by this change — not a style preference, not speculation about code outside the diff?",
             ),
-            severity: score("How severe is the problem if merged as-is?", SEVERITIES),
+            severity: score(SEVERITY_QUESTION, SEVERITIES),
           },
         );
         // Independent reviewers agreeing is evidence; nudge confidence up a little.
         const confidence = Math.min(1, a.real.p + 0.1 * f.alsoRaisedBy.length);
-        const judgedSeverity = a.severity.level;
+        const judgedSeverity = capSeverity(f.reviewer, a.severity.level);
         return {
           ...f,
           judgedSeverity,
@@ -160,6 +193,18 @@ export const triage =
       log: [logEntry("review.triage", { note: `${deps.judge.name}: kept ${kept}/${findings.length}` })],
     };
   };
+
+/**
+ * Policy, not judgement: some reviewers can never block a merge. Docs
+ * findings stop at minor; wrong instructions that matter show up in the
+ * correctness or spec review too.
+ */
+export const SEVERITY_CAP: Record<string, Severity> = { docs: "minor" };
+
+export function capSeverity(reviewer: string, severity: Severity): Severity {
+  const cap = SEVERITY_CAP[reviewer];
+  return cap && rank(severity) > rank(cap) ? cap : severity;
+}
 
 /** Just the part of the diff for one file — the judge doesn't need the rest. */
 export function fileDiff(diff: string, file?: string): string {

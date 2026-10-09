@@ -62,7 +62,7 @@ test("verdict: dropped findings don't block", () => {
 });
 
 test("spec reviewer only runs when there's a task with criteria", () => {
-  const ctx = { diff: "", files: [], adrs: [], conventions: [] };
+  const ctx = { diff: "", files: [], skipped: [], standards: [], adrs: [], conventions: [] };
   const ids = ["spec", "security", "architecture"];
   assert.deepEqual(activeReviewers(ids, ctx).map((r) => r.id), ["security"]);
   const withTask = {
@@ -79,10 +79,47 @@ test("fileDiff returns only the requested file's section", () => {
 });
 
 test("docs reviewer runs only when the diff touches docs or adds comments", () => {
-  const ctx = (files: string[], diff: string) => ({ diff, files, adrs: [], conventions: [] });
+  const ctx = (files: string[], diff: string) => ({ diff, files, skipped: [], standards: [], adrs: [], conventions: [] });
   const ids = (c: ReturnType<typeof ctx>) => activeReviewers(["docs"], c).map((r) => r.id);
   assert.deepEqual(ids(ctx(["README.md"], "+Some text")), ["docs"]);
   assert.deepEqual(ids(ctx(["src/a.ts"], "+++ b/src/a.ts\n+  // explain the retry limit\n+const x = 1;")), ["docs"]);
   assert.deepEqual(ids(ctx(["src/a.ts"], "+++ b/src/a.ts\n+const x = 1;")), []);
   assert.deepEqual(ids(ctx(["bin/run"], "+++ b/bin/run\n+#!/usr/bin/env node")), []);
+});
+
+test("loadContext leaves generated files out but tells reviewers they changed", async () => {
+  const { loadContext } = await import("../src/nodes");
+  const diff = "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml\n+++ b/pnpm-lock.yaml\n+lots\ndiff --git a/src/a.ts b/src/a.ts\n+++ b/src/a.ts\n+const a = 1;\n";
+  const deps = { config: { review: { ignore: [] }, conventions: [], standards: [], artifactsDir: "/nowhere" } } as any;
+  const out = await loadContext(deps)({ input: { diff, label: "t" } } as any);
+  assert.deepEqual(out.context!.skipped, ["pnpm-lock.yaml"]);
+  assert.deepEqual(out.context!.files, ["src/a.ts"]);
+  assert.match(out.context!.diff, /^Generated files this change also adds or edits.*pnpm-lock\.yaml/);
+  assert.ok(!out.context!.diff.includes("+lots"));
+});
+
+test("each reviewer gets only the standards listed for it", async () => {
+  const { standardsFor } = await import("../src/reviewers");
+  const ctx = {
+    diff: "",
+    files: [],
+    skipped: [],
+    adrs: [],
+    conventions: [],
+    standards: [
+      { path: "docs/standards/modules.md", reviewers: ["architecture", "correctness"], text: "Services check permissions." },
+      { path: "docs/standards/testing.md", reviewers: ["tests"], text: "One test per criterion." },
+    ],
+  };
+  assert.match(standardsFor("architecture", ctx), /modules\.md[\s\S]*Services check permissions/);
+  assert.ok(!standardsFor("architecture", ctx).includes("testing.md"));
+  assert.match(standardsFor("tests", ctx), /One test per criterion/);
+  assert.equal(standardsFor("security", ctx), "(none)");
+});
+
+test("docs findings never rise above minor, whatever the judge says", async () => {
+  const { capSeverity } = await import("../src/nodes");
+  assert.equal(capSeverity("docs", "major"), "minor");
+  assert.equal(capSeverity("docs", "nit"), "nit");
+  assert.equal(capSeverity("security", "blocker"), "blocker");
 });

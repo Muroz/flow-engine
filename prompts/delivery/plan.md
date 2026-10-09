@@ -7,4 +7,7 @@ ACCEPTANCE CRITERIA:
 
 DECISIONS TO RESPECT: {{adrs}}
 
+PREVIOUS PLAN AND THE OWNER'S NOTES ON IT (follow the notes):
+{{feedback}}
+
 Reply with a single JSON object: {"summary": "one or two sentences", "steps": ["3–7 concrete steps, each naming the file or module it touches"]}

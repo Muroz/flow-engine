@@ -91,9 +91,9 @@ export function rolesInUse(config: ProjectConfig, engine: "jev" | "llm"): RoleMo
   return roles.map((role) => ({ role, model: modelFor(config, role) }));
 }
 
-/** Every role on local Claude Code, with Claude Code picking the model. */
+/** Every role on local Claude Code, on `claudeCode.model` unless a role already names a Claude Code model. */
 export function withClaudeCodeModels(config: ProjectConfig): ProjectConfig {
-  const keep = (m: string | undefined) => (m && isClaudeCodeModel(m) ? m : `${CLAUDE_CODE_PREFIX}default`);
+  const keep = (m: string | undefined) => (m && isClaudeCodeModel(m) ? m : `${CLAUDE_CODE_PREFIX}${config.claudeCodeModel ?? "default"}`);
   return {
     ...config,
     models: {

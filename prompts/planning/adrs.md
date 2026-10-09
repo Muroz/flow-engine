@@ -6,4 +6,6 @@ CHOSEN ARCHITECTURE:
 REQUIREMENTS:
 {{requirements}}
 
-Reply with a single JSON object: {"adrs": [{"title": "...", "context": "...", "decision": "one checkable rule", "consequences": "..."}]}
+The ADRs are numbered in the order you list them: ADR-0001, ADR-0002 and so on. Under "related", list the other ADRs in this set that a reader should read together with this one.
+
+Reply with a single JSON object: {"adrs": [{"title": "...", "context": "...", "decision": "one checkable rule", "consequences": "...", "related": ["ADR-0002"]}]}

@@ -34,7 +34,7 @@ START → loadContext ─┬─► reviewer(spec)         ─┐
 
 ## Specialists
 
-Each specialist sees only its own view of the context. That keeps prompts short and stops reviewers wandering outside their job.
+Each specialist sees only its own view of the context. That keeps prompts short and stops reviewers wandering outside their job. Each one also gets the project standards that `.flows.yaml` lists for it. See [Project standards](#project-standards).
 
 | ID | Sees | Runs when |
 |---|---|---|
@@ -42,8 +42,31 @@ Each specialist sees only its own view of the context. That keeps prompts short 
 | `correctness` | Diff | Always. |
 | `security` | Diff | Always. |
 | `tests` | Changed files, acceptance criteria, diff | Always. |
-| `architecture` | ADR decisions, conventions, diff | The project has ADRs or conventions. |
-| `docs` | Writing rules from `prompts/_writing.md`, diff | The diff changes a Markdown or text file, or adds a comment line. |
+| `architecture` | ADR decisions, conventions, diff | The project has ADRs, conventions or standards listed for it. |
+| `docs` | Writing rules for developers, doc files, and the code hunks that add comments | The diff changes a Markdown or text file, or adds a comment line. |
+
+## Project standards
+
+`standards` in `.flows.yaml` lists the project's own rules files, such as a module layout or a testing standard, and the reviewers that check against each one:
+
+```yaml
+standards:
+  - path: docs/standards/testing.md
+    reviewers: [tests]
+```
+
+`loadContext` reads the files, and each reviewer's prompt gets only its own under "PROJECT STANDARDS". A change that breaks a standard is a major finding. A reviewer with none listed sees "(none)".
+
+## Severity
+
+Reviewers and the triage judge use the same scale. `prompts/review/_output.md` defines it for the reviewers, and `SEVERITY_QUESTION` in `src/nodes.ts` for the judge:
+
+- **blocker:** a security hole in code that runs, data loss, or a broken build.
+- **major:** a bug in code that runs, a missed acceptance criterion, or a broken ADR or project standard.
+- **minor:** hardening beyond what the task asks, unusual ways around a rule, or unclear docs.
+- **nit:** taste.
+
+Anything that neither the task nor an ADR nor a standard asks for is minor at most. So are requests to build something a later task will build. Docs findings are capped at minor in code, by `SEVERITY_CAP` in `src/nodes.ts`, whatever the judge says. The judge sees the task's title and acceptance criteria, so it can tell.
 
 To add a specialist:
 

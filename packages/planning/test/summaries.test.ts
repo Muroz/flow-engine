@@ -58,3 +58,11 @@ test("missing fields get defaults, so gates never print undefined", () => {
   assert.deepEqual(req, { id: "R-1", title: "Managers can drag to create a shift", text: req.text, area: "General", priority: "mvp" });
   assert.equal(asOption({}, "B", "angle").facts.monthlyCost, "?");
 });
+
+test("new ADRs record each Related to link on both sides", async () => {
+  const { renderAdr } = await import("../src/nodes");
+  const a = { id: "ADR-0001", title: "One", context: "c", decision: "d", consequences: "q", related: ["ADR-0002"] };
+  const b = { id: "ADR-0002", title: "Two", context: "c", decision: "d", consequences: "q" };
+  assert.match(renderAdr(a, [a, b]), /## Status\nProposed\n\n## Relations\n- Related to \[ADR-0002\]\(0002-two\.md\)/);
+  assert.match(renderAdr(b, [a, b]), /- Related to \[ADR-0001\]\(0001-one\.md\)/);
+});

@@ -18,3 +18,8 @@ export function loadPrompt(name: string): string {
 export function render(template: string, vars: Record<string, string | undefined>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (m, key: string) => vars[key] ?? m);
 }
+
+/** The shared writing rules, for the project owner (walkthroughs) or for developers (repo docs and comments). */
+export function writingRules(audience: "owner" | "developer"): string {
+  return render(loadPrompt("_writing"), { audience: loadPrompt(`_audience-${audience}`).trim() });
+}

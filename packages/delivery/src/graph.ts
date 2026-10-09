@@ -1,22 +1,27 @@
 /**
  * The delivery graph — one planned task from plan to merge.
  *
- *   START → makePlan → assessRisk ─┬─(low)──────────────► implement ◄─────────────┐
- *                                  └─(else)─► approvePlan ─┘   │                   │
- *                                             🙋                ▼                   │
- *                                                          runChecks ─(fail, n<max)─┤
- *                                                              │ pass               │
- *                                                              ▼                    │
- *                                                      runReview (subgraph) ─(fix, n<max)
- *                                                              │ pass
- *                                   escalate 🙋 ◄─(escalate / n≥max)
- *                                       │ accept               ▼
- *                                       └──────────────► explainWork
- *                                                              ▼
- *                                                      approveMerge 🙋 → END
+ *   START → makePlan ◄──(revise)──────────────── approvePlan (gate)
+ *              ▼                                    ▲      │ approve
+ *           assessRisk ─(above autoApproveRisk)─────┘      ▼
+ *              └─(otherwise)──────────────────────────► implement ◄───────────────────────────┐
+ *                                                          ▼                                  │
+ *                                                      runChecks ─(fail, attempts left)───────┤
+ *                                                          ▼ pass                             │
+ *                                                  runReview (subgraph) ─(fix, attempts left)─┤
+ *                                                          │ pass                             │
+ *            escalate (gate) ◄─(escalate, out of attempts or over budget)                     │
+ *              │ retry ───────────────────────────────────────────────────────────────────────┤
+ *              │ accept                                    ▼                                  │
+ *              └─────────────────────────────────► explainWork                                │
+ *                                                          ▼                                  │
+ *                                                 approveMerge (gate) ─(fix)──────────────────┘
+ *                                                          ▼ merge or reject
+ *                                                         END
  *
- * You're involved at most three times — plan (only if risky), escalation
- * (only if stuck) and merge — and each time you get a one-screen summary.
+ * Three gates: the plan (only if risky), escalation (only if stuck) and the
+ * merge. revise, retry and fix can bring you back to one. Each gate fits on
+ * one screen.
  * `explainWork` writes a plain-language walkthrough before you decide to merge.
  */
 import type { FlowDeps, LogEntry, PlannedTask, DiffSource } from "@flows/core";
@@ -25,6 +30,7 @@ import { Annotation, END, MemorySaver, START, StateGraph, type BaseCheckpointSav
 import {
   afterChecks,
   afterEscalate,
+  afterMerge,
   afterPlanGate,
   afterReview,
   afterRisk,
@@ -54,6 +60,8 @@ export const DeliveryAnnotation = Annotation.Root({
   checks: Annotation<DeliveryState["checks"]>,
   review: Annotation<DeliveryState["review"]>,
   fixNotes: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),
+  planFeedback: Annotation<string | undefined>,
+  budgetFrom: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
   walkthrough: Annotation<DeliveryState["walkthrough"]>,
   outcome: Annotation<DeliveryState["outcome"]>,
   log: Annotation<LogEntry[]>({ reducer: concat, default: () => [] }),
@@ -68,20 +76,20 @@ export function buildDeliveryGraph(deps: FlowDeps, opts: { checkpointer?: BaseCh
     .addNode("approvePlan", approvePlan)
     .addNode("implement", implement(deps))
     .addNode("runChecks", runChecks(deps))
-    .addNode("runReview", review(reviewGraph))
+    .addNode("runReview", review(deps, reviewGraph))
     .addNode("escalate", escalate(deps))
     .addNode("explainWork", explainWork(deps))
     .addNode("approveMerge", approveMerge(deps))
     .addEdge(START, "makePlan")
     .addEdge("makePlan", "assessRisk")
     .addConditionalEdges("assessRisk", afterRisk(deps), ["implement", "approvePlan"])
-    .addConditionalEdges("approvePlan", afterPlanGate, ["implement", END])
+    .addConditionalEdges("approvePlan", afterPlanGate, ["makePlan", "implement", END])
     .addEdge("implement", "runChecks")
     .addConditionalEdges("runChecks", afterChecks(deps), ["runReview", "implement", "escalate"])
     .addConditionalEdges("runReview", afterReview(deps), ["explainWork", "implement", "escalate"])
-    .addConditionalEdges("escalate", afterEscalate, ["implement", "explainWork", END])
+    .addConditionalEdges("escalate", afterEscalate(deps), ["implement", "explainWork", END])
     .addEdge("explainWork", "approveMerge")
-    .addEdge("approveMerge", END)
+    .addConditionalEdges("approveMerge", afterMerge, ["implement", END])
     // Human gates need a checkpointer: that's what lets the graph pause and resume.
     .compile({ checkpointer: opts.checkpointer ?? new MemorySaver() });
 }

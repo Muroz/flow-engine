@@ -3,6 +3,9 @@
 ## Status
 Accepted
 
+## Relations
+None.
+
 ## Context
 Queries were scattered across route handlers, which made them hard to test and easy to get wrong.
 
