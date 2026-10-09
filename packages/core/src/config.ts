@@ -63,6 +63,8 @@ export type ProjectConfig = {
     agent: "diff-file" | "claude-code";
     /** Claude Code tool allow-list. Defaults to read/edit tools plus one Bash rule per check. */
     agentTools?: string[];
+    /** Files git doesn't track, such as .env, copied from the repo into the agent's worktree when it lacks them. */
+    copyToWorktree: string[];
     /** Model spend in US dollars after which a run stops and asks you. 0 turns the limit off. */
     maxCostUsd: number;
     /** Extra attempts a "retry" at the escalate gate or a "fix" at the merge gate grants. */
@@ -122,6 +124,7 @@ const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
     agent: "diff-file",
     maxCostUsd: 5,
     retryAttempts: 1,
+    copyToWorktree: [],
   },
   claudeCodeModel: "opus",
   conventions: [],

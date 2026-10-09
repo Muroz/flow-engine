@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -77,4 +77,21 @@ test("describeEvent prints one line per tool call, with paths inside the worktre
   };
   assert.deepEqual(describeEvent(event, ["/w/T-001"]), ["Edit src/app/page.tsx", "Bash pnpm test"]);
   assert.deepEqual(describeEvent({ type: "result" }), []);
+});
+
+test("ensureWorktree copies listed untracked files, such as .env, into the worktree", (t) => {
+  const repo = tempRepo();
+  const project = `test-copy-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  writeFileSync(join(repo, ".env"), "DATABASE_URL=postgres://local\n");
+  const dir = ensureWorktree(repo, project, "T-001", "main", [".env", "missing.txt"]);
+  assert.equal(readFileSync(join(dir, ".env"), "utf8"), "DATABASE_URL=postgres://local\n");
+  assert.ok(!existsSync(join(dir, "missing.txt")));
+
+  writeFileSync(join(dir, ".env"), "DATABASE_URL=postgres://local\nEXTRA=agent\n");
+  ensureWorktree(repo, project, "T-001", "main", [".env"]);
+  assert.match(readFileSync(join(dir, ".env"), "utf8"), /EXTRA=agent/, "a copy the agent changed is kept");
 });

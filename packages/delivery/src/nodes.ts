@@ -140,7 +140,7 @@ export const implement =
       };
     }
 
-    const workdir = ensureWorktree(deps.config.repoDir, deps.config.project, s.task.id, s.base);
+    const workdir = ensureWorktree(deps.config.repoDir, deps.config.project, s.task.id, s.base, deps.config.delivery.copyToWorktree);
     const prompt = agentPrompt(s, deps);
 
     // The transcript goes to run files, not state. A failed agent run still

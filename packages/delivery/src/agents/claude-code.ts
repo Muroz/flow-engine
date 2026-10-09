@@ -9,8 +9,8 @@
  * replace `runClaudeCode`.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { CLAUDE_CODE_PREFIX, ENGINE_ROOT, isClaudeCodeModel } from "@flows/core";
 
 /** Read-only and edit tools the agent always gets. Checks are added per project. */
@@ -20,7 +20,7 @@ export const BASE_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
  * Create (or reuse) the worktree for a task under the engine's `runs/` folder,
  * which is git-ignored and never inside the project repo.
  */
-export function ensureWorktree(repo: string, project: string, taskId: string, base: string): string {
+export function ensureWorktree(repo: string, project: string, taskId: string, base: string, copy: string[] = []): string {
   const top = execFileSync("git", ["-C", repo, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
   if (realpathSync(top) !== realpathSync(repo)) {
     throw new Error(`--repo must be the root of a git repository (got ${repo}, root is ${top}).`);
@@ -28,6 +28,16 @@ export function ensureWorktree(repo: string, project: string, taskId: string, ba
   const dir = worktreePath(project, taskId);
   if (!existsSync(dir)) {
     execFileSync("git", ["-C", repo, "worktree", "add", "-B", `flows/${taskId}`, dir, base], { stdio: "pipe" });
+  }
+  // Untracked files such as .env never reach a new worktree, so the checks would run without them.
+  // An existing copy is kept, since the agent may have added variables to it.
+  for (const file of copy) {
+    const from = join(repo, file);
+    const to = join(dir, file);
+    if (existsSync(from) && !existsSync(to)) {
+      mkdirSync(dirname(to), { recursive: true });
+      copyFileSync(from, to);
+    }
   }
   return dir;
 }

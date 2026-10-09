@@ -90,7 +90,9 @@ Your notes pick what goes back:
 - **`diff-file`**, the default, replays the diff from `--diff-file` (or `git diff --base...--head`) on every attempt. The sample flow and the tests use it, and `--offline` always does.
 - **`claude-code`** runs Claude Code headless in a git worktree on branch `flows/<task>`. The code is in `src/agents/claude-code.ts`, and [docs/wiring.md](../../docs/wiring.md#3-coding-agent) explains how to turn it on.
 
-With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. It also lists the project's `standards` files and tells the agent to read them first. In a follow-up round, it tells the agent to fix only those notes and leave the rest alone. `agentPrompt` in `src/nodes.ts` builds the prompt. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. A `claude-code/<model>` value in `models.implementer` picks its model. Otherwise it uses `claudeCode.model`, which defaults to `opus`. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
+With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The prompt also lists the project's `standards` files and tells the agent to read them first. In a follow-up round, it tells the agent to fix only those notes and leave the rest alone. `agentPrompt` in `src/nodes.ts` builds the prompt.
+
+Files git doesn't track, such as `.env`, don't reach a new worktree. List them under `delivery.copyToWorktree`, and delivery copies them in so the checks can use them. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. A `claude-code/<model>` value in `models.implementer` picks its model. Otherwise it uses `claudeCode.model`, which defaults to `opus`. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
 
 ## Walkthroughs
 

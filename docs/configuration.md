@@ -104,6 +104,7 @@ Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provid
 |---|---|---|
 | `delivery.agent` | `diff-file` | Who writes the code. `diff-file` replays the diff from `--diff-file`, or `--base...--head`, on every attempt, for demos and tests. `claude-code` runs Claude Code in a git worktree per task. `--offline` always uses `diff-file`. |
 | `delivery.agentTools` | Read and edit tools, plus one `Bash(<check>)` rule per check | The Claude Code tool allow-list, in Claude Code's `--allowedTools` syntax. |
+| `delivery.copyToWorktree` | `[]` | Files git doesn't track, such as `.env`, that the agent's worktree needs. Delivery copies each one from the repo into the worktree when the worktree doesn't have it yet, and keeps an existing copy, since the agent may have changed it. |
 | `delivery.checks` | `[]` | Shell commands run after each attempt, in the agent's worktree when there is one and in the repo when there isn't. Each has ten minutes. With none, checks count as passed. |
 | `delivery.maxAttempts` | `3` | The stop rule. After this many failed attempts, the flow asks you. |
 | `delivery.autoApproveRisk` | `low` | Plans at or below this risk skip the plan gate. `none` shows you every plan. `medium` only stops for high-risk plans. |
