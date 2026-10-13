@@ -35,7 +35,7 @@ import {
 } from "@flows/core";
 import { conflictWith, isConflict, rank, type ReviewGraph, type ReviewState } from "@flows/review";
 import { END, interrupt, type LangGraphRunnableConfig } from "@langchain/langgraph";
-import { agentModel, BASE_TOOLS, ensureWorktree, runClaudeCode, snapshotTree, treeDiff, worktreeDiff } from "./agents/claude-code";
+import { agentModel, BASE_TOOLS, ensureWorktree, mergeWorktree, runClaudeCode, snapshotTree, treeDiff, worktreeDiff } from "./agents/claude-code";
 import type { CheckResult, DeliveryState, DeliveryUpdate } from "./state";
 import { appendJournal, writeWalkthrough } from "./walkthrough";
 
@@ -151,16 +151,19 @@ export const implement =
     const dir = runDir(deps.config, s.runId);
     let note = `round ${round}, attempt ${attempt}/${max}${addressing} (claude-code${model ? ` ${model}` : ""})`;
     let declined: PriorFinding[] = [];
+    let agentNote: string | undefined;
     try {
       const run = await runClaudeCode(workdir, prompt, tools, model, (step) => say(config, `      ${step}`));
       writeRunFile(dir, `agent-${round}.json`, run.result);
       writeRunFile(dir, `agent-${round}.jsonl`, run.events);
       if (run.costUsd !== undefined) note += `, agent list price $${run.costUsd.toFixed(2)}`;
-      declined = parseDeclines(resultText(run.result), s.ledger ?? [], round);
+      agentNote = resultText(run.result);
+      declined = parseDeclines(agentNote, s.ledger ?? [], round);
       if (declined.length) note += `, declined ${declined.length}`;
     } catch (e: any) {
       writeRunFile(dir, `agent-${round}.log`, String(e.message));
       note += `: agent failed (${String(e.message).split("\n")[0]})`;
+      agentNote = String(e.message);
     }
 
     const diff = worktreeDiff(workdir, s.base);
@@ -169,6 +172,7 @@ export const implement =
       workdir,
       diff,
       tree: snapshotTree(workdir),
+      agentNote,
       ledger: declined,
       log: [logEntry("delivery.implement", { note, details: [...details, ...declined.map((d) => `declined: ${d.title} — ${d.note}`)] })],
     };
@@ -367,7 +371,10 @@ export const escalate =
   async (s: DeliveryState): Promise<DeliveryUpdate> => {
     const { maxAttempts, maxCostUsd, retryAttempts } = deps.config.delivery;
     const spent = spentSince(s);
-    const why = overBudget(deps, s)
+    const empty = !s.diff?.trim();
+    const why = empty
+      ? "The agent changed nothing. Its last message:"
+      : overBudget(deps, s)
       ? `Cost limit: $${spent.toFixed(2)} spent, limit $${maxCostUsd.toFixed(2)} (delivery.maxCostUsd).`
       : s.attempts >= maxAttempts
         ? `Out of attempts: ${s.attempts} of ${maxAttempts} used and still not passing.`
@@ -381,6 +388,7 @@ export const escalate =
       detailPath: s.review?.reportPath,
       summary: [
         why,
+        ...(empty ? (s.agentNote?.trim() || "(none)").split("\n").slice(0, 15).map((l) => `  ${l}`) : []),
         "",
         "History:",
         ...roundHistory(s).map((h) => `  ${h}`),
@@ -392,7 +400,8 @@ export const escalate =
         "",
         `retry gives ${retryAttempts} more attempt(s) and resets the cost limit. Notes you add go to the agent.`,
       ].join("\n"),
-      options: ["abort", "retry", "accept"],
+      // An empty diff has nothing to accept.
+      options: empty ? ["abort", "retry"] : ["abort", "retry", "accept"],
     });
     if (d.decision === "retry") {
       return {
@@ -437,7 +446,7 @@ export function pickComments(comments: string[], notes: string | undefined): str
 
 export const approveMerge =
   (deps: FlowDeps) =>
-  async (s: DeliveryState): Promise<DeliveryUpdate> => {
+  async (s: DeliveryState, config?: LangGraphRunnableConfig): Promise<DeliveryUpdate> => {
     const comments = (s.review?.findings ?? []).map(findingNote);
     const d = gate({
       gate: "approve-merge",
@@ -466,12 +475,26 @@ export const approveMerge =
         log: [logEntry("delivery.approveMerge", { note: "fix" })],
       };
     }
-    // Pushing and opening the PR stay with you (see docs/wiring.md, step 5).
+    // merge commits the worktree on flows/<task> and fast-forwards the base to
+    // it. Pushing stays with you (see docs/wiring.md, step 5).
     const merged = d.decision === "merge";
-    const journal = merged && s.walkthrough && !deps.offline ? appendJournal(deps, s.task, s.walkthrough, s.runId) : undefined;
+    const notes = [d.decision];
+    let landed = merged && !deps.offline;
+    if (landed && s.workdir) {
+      const r = mergeWorktree(deps.config.repoDir, s.workdir, s.task.id, s.base, `${s.task.id}: ${s.task.title}`);
+      landed = r.merged;
+      const line = r.merged
+        ? `committed ${r.commit?.slice(0, 7)} on flows/${s.task.id} and merged it into ${s.base}`
+        : `${r.commit ? `committed ${r.commit.slice(0, 7)} on flows/${s.task.id}, but ` : ""}not merged into ${s.base}: ${r.why}. ` +
+          `Finish with: git -C ${deps.config.repoDir} merge flows/${s.task.id}`;
+      say(config, `      ${line}`);
+      notes.push(line);
+    }
+    const journal = landed && s.walkthrough ? appendJournal(deps, s.task, s.walkthrough, s.runId) : undefined;
+    if (journal) notes.push("journal updated");
     return {
       outcome: merged ? "merged" : "rejected",
-      log: [logEntry("delivery.approveMerge", { note: journal ? `${d.decision}, journal updated` : d.decision })],
+      log: [logEntry("delivery.approveMerge", { note: notes.join(", ") })],
     };
   };
 
@@ -483,6 +506,9 @@ export const afterRisk = (deps: FlowDeps) => (s: DeliveryState) =>
   riskRank(s.plan!.risk) <= riskRank(deps.config.delivery.autoApproveRisk) ? "implement" : "approvePlan";
 
 export const afterPlanGate = (s: DeliveryState) => (s.outcome === "rejected" ? END : s.planFeedback ? "makePlan" : "implement");
+
+/** An empty diff skips checks and review, which would pass the untouched code. */
+export const afterImplement = (deps: FlowDeps) => (s: DeliveryState) => (!deps.offline && !s.diff?.trim() ? "escalate" : "runChecks");
 
 export const afterChecks = (deps: FlowDeps) => (s: DeliveryState) => {
   if (s.checks?.passed) return "runReview";

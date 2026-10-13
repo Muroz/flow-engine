@@ -140,6 +140,65 @@ export function worktreeDiff(workdir: string, base: string): string {
   });
 }
 
+export type MergeResult = { commit?: string; merged: boolean; why?: string };
+
+/**
+ * Commits the task's worktree on `flows/<task>`, then fast-forwards `base` in
+ * `repo` to it. A base that moved on, or a dirty checkout of it, stops short
+ * of the merge and says why; the commit stays on the branch either way.
+ */
+export function mergeWorktree(repo: string, workdir: string, taskId: string, base: string, message: string): MergeResult {
+  const branch = `flows/${taskId}`;
+  const run = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: "pipe" }).trim();
+  let commit: string | undefined;
+  try {
+    run(workdir, "add", "-A");
+    if (run(workdir, "diff", "--cached", "--name-only")) run(workdir, "commit", "-q", "-m", message);
+    commit = run(workdir, "rev-parse", "HEAD");
+    if (run(repo, "branch", "--show-current") === base) {
+      if (run(repo, "status", "--porcelain", "--untracked-files=no")) {
+        return { commit, merged: false, why: `${base} is checked out in ${repo} with uncommitted changes` };
+      }
+      run(repo, "merge", "-q", "--ff-only", branch);
+    } else {
+      // Fetching into a local branch only ever fast-forwards it.
+      run(repo, "fetch", "-q", ".", `${branch}:${base}`);
+    }
+    return { commit, merged: true };
+  } catch (e: any) {
+    const why = String(e.stderr || e.message).trim().split("\n")[0];
+    return { commit, merged: false, why };
+  }
+}
+
+/**
+ * Why each of the task's dependencies is not yet in `base`, if any is not.
+ * A dependency is missing when its worktree still holds uncommitted work, or
+ * when its `flows/<dep>` branch is not an ancestor of `base`. One with neither
+ * a worktree nor a branch counts as done outside flows.
+ */
+export function unmetDependencies(repo: string, project: string, dependsOn: string[], base: string): string[] {
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: "pipe" });
+  const ok = (cwd: string, ...args: string[]) => {
+    try {
+      git(cwd, ...args);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const unmet: string[] = [];
+  for (const dep of dependsOn) {
+    const dir = worktreePath(project, dep);
+    if (existsSync(dir) && git(dir, "status", "--porcelain").trim()) {
+      unmet.push(`${dep}: its worktree has uncommitted work (${dir})`);
+    } else if (ok(repo, "rev-parse", "--verify", "-q", `refs/heads/flows/${dep}`) && !ok(repo, "merge-base", "--is-ancestor", `flows/${dep}`, base)) {
+      unmet.push(`${dep}: branch flows/${dep} is not merged into ${base}`);
+    }
+  }
+  return unmet;
+}
+
 /**
  * The git tree of everything `worktreeDiff` staged. Writing a tree object
  * leaves the worktree, the index and the branch as they are.

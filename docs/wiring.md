@@ -197,7 +197,7 @@ To turn it on:
    pnpm flows deliver --repo /path/to/project --task T-001 --base main
    ```
 
-Before the merge gate, delivery writes `walkthrough.md` in the run folder: a plain-language account of what changed, how it works, with diagrams where they help, and how to try it. The gate shows its summary. On `merge`, the task joins `runs/<project>/journal.md`, which you can read to follow the whole project. [Walkthroughs](../packages/delivery/README.md#walkthroughs) has the details.
+Before the merge gate, delivery writes `walkthrough.md` in the run folder: a plain-language account of what changed, how it works, with diagrams where they help, and how to try it. The gate shows its summary. On `merge`, delivery commits the work on `flows/<task>`, fast-forwards the base to it, and the task joins `runs/<project>/journal.md`, which you can read to follow the whole project. [Walkthroughs](../packages/delivery/README.md#walkthroughs) has the details.
 
 When the run ends, the CLI prints the worktree path. The changes stay there, staged but not committed, until you act on them.
 
@@ -227,8 +227,8 @@ The graphs themselves don't change. That is the point of the `GateRequest` and `
 
 None of this is built yet.
 
-- **Open PRs.** In `approveMerge`, on `merge`, commit in the worktree, push branch `flows/<task>` and run `gh pr create --fill --head flows/<task>`. Leave the merge itself to you, or add `gh pr merge --squash` once you trust the flow.
-- **Run tasks in order.** `flows tasks --done T-001,T-002` shows what's ready. A small loop that runs `deliver` for each ready task turns `tasks.yaml` into a work queue. The worktrees are isolated, so tasks can run in parallel.
+- **Open PRs.** `merge` fast-forwards the base on your machine. To review on GitHub instead, have `approveMerge` push `flows/<task>` and run `gh pr create --fill --head flows/<task>` in place of the fast-forward.
+- **Run tasks in order.** `flows tasks --done T-001,T-002` shows what's ready. `deliver` already refuses a task whose dependencies aren't in the base. A small loop that runs `deliver` for each ready task turns `tasks.yaml` into a work queue. The worktrees are isolated, so tasks can run in parallel.
 - **Tracing.** Add `@langfuse/langchain` and pass its callback handler in the `invoke` config to see each node's latency and cost. The `log` in state already records the model and cost for each node.
 - **Evals before prompt tuning.** Collect 10 to 20 real diffs with known issues under `evals/review/`, and record which findings should appear. Re-run them after every prompt or model change. Without them, you can't tell whether a change helped.
 - **Replanning.** When `escalate` shows that the task itself was wrong, write `runs/<project>/<run id>/replan.md`. Then re-run planning from `breakdown` with that note instead of starting over.

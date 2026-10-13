@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { ENGINE_ROOT } from "@flows/core";
-import { agentModel, describeEvent, ensureWorktree, snapshotTree, treeDiff, worktreeDiff } from "../src/agents/claude-code";
+import { agentModel, describeEvent, ensureWorktree, mergeWorktree, snapshotTree, treeDiff, unmetDependencies, worktreeDiff } from "../src/agents/claude-code";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
 
@@ -119,4 +119,64 @@ test("snapshots leave the worktree alone and show what changed between rounds", 
   const delta = treeDiff(dir, first, second);
   assert.match(delta, /^\+\+\+ b\/b\.txt$/m);
   assert.doesNotMatch(delta, /round one/, "the delta leaves out what the last round already saw");
+});
+
+test("mergeWorktree commits the task's work and fast-forwards the base to it", (t) => {
+  const repo = tempRepo();
+  const project = `test-merge-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const dir = ensureWorktree(repo, project, "T-001", "main");
+  writeFileSync(join(dir, "b.txt"), "new\n");
+  worktreeDiff(dir, "main");
+
+  const r = mergeWorktree(repo, dir, "T-001", "main", "T-001: Add b");
+  assert.equal(r.merged, true);
+  assert.equal(git(repo, "rev-parse", "main").trim(), r.commit);
+  assert.equal(git(repo, "log", "-1", "--format=%s", "main").trim(), "T-001: Add b");
+  assert.equal(readFileSync(join(repo, "b.txt"), "utf8"), "new\n", "the checked-out base moves with it");
+  assert.equal(git(dir, "status", "--porcelain"), "");
+});
+
+test("mergeWorktree keeps the commit but stops when the base moved on", (t) => {
+  const repo = tempRepo();
+  const project = `test-moved-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const dir = ensureWorktree(repo, project, "T-001", "main");
+  writeFileSync(join(dir, "b.txt"), "new\n");
+  writeFileSync(join(repo, "c.txt"), "elsewhere\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "moved");
+
+  const r = mergeWorktree(repo, dir, "T-001", "main", "T-001: Add b");
+  assert.equal(r.merged, false);
+  assert.ok(r.why);
+  assert.equal(git(repo, "rev-parse", "flows/T-001").trim(), r.commit, "the work is committed on the branch");
+  assert.equal(git(repo, "log", "-1", "--format=%s", "main").trim(), "moved");
+});
+
+test("unmetDependencies flags uncommitted and unmerged dependencies, and clears once merged", (t) => {
+  const repo = tempRepo();
+  const project = `test-deps-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  assert.deepEqual(unmetDependencies(repo, project, ["T-000"], "main"), [], "no worktree or branch: done outside flows");
+
+  const dir = ensureWorktree(repo, project, "T-001", "main");
+  writeFileSync(join(dir, "b.txt"), "new\n");
+  assert.match(unmetDependencies(repo, project, ["T-001"], "main")[0]!, /T-001: its worktree has uncommitted work/);
+
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "work");
+  assert.match(unmetDependencies(repo, project, ["T-001"], "main")[0]!, /branch flows\/T-001 is not merged into main/);
+
+  git(repo, "merge", "-q", "--ff-only", "flows/T-001");
+  assert.deepEqual(unmetDependencies(repo, project, ["T-001"], "main"), []);
 });

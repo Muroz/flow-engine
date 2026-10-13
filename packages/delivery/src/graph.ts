@@ -5,7 +5,7 @@
  *              ▼                                    ▲      │ approve
  *           assessRisk ─(above autoApproveRisk)─────┘      ▼
  *              └─(otherwise)──────────────────────────► implement ◄───────────────────────────┐
- *                                                          ▼                                  │
+ *                                                          ▼ (no changes: escalate)           │
  *                                                      runChecks ─(fail, attempts left)───────┤
  *                                                          ▼ pass                             │
  *                                                  runReview (subgraph) ─(fix, attempts left)─┤
@@ -30,6 +30,7 @@ import { Annotation, END, MemorySaver, START, StateGraph, type BaseCheckpointSav
 import {
   afterChecks,
   afterEscalate,
+  afterImplement,
   afterMerge,
   afterPlanGate,
   afterReview,
@@ -56,6 +57,7 @@ export const DeliveryAnnotation = Annotation.Root({
   plan: Annotation<DeliveryPlan | undefined>,
   attempts: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
   diff: Annotation<string | undefined>,
+  agentNote: Annotation<string | undefined>,
   workdir: Annotation<string | undefined>,
   checks: Annotation<DeliveryState["checks"]>,
   tree: Annotation<string | undefined>,
@@ -87,7 +89,7 @@ export function buildDeliveryGraph(deps: FlowDeps, opts: { checkpointer?: BaseCh
     .addEdge("makePlan", "assessRisk")
     .addConditionalEdges("assessRisk", afterRisk(deps), ["implement", "approvePlan"])
     .addConditionalEdges("approvePlan", afterPlanGate, ["makePlan", "implement", END])
-    .addEdge("implement", "runChecks")
+    .addConditionalEdges("implement", afterImplement(deps), ["runChecks", "escalate"])
     .addConditionalEdges("runChecks", afterChecks(deps), ["runReview", "implement", "escalate"])
     .addConditionalEdges("runReview", afterReview(deps), ["explainWork", "implement", "escalate"])
     .addConditionalEdges("escalate", afterEscalate(deps), ["implement", "explainWork", END])

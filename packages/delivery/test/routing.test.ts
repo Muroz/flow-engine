@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MockJudge, MockModelClient, type FlowDeps, type ProjectConfig } from "@flows/core";
 import { END } from "@langchain/langgraph";
-import { afterChecks, afterEscalate, afterMerge, afterPlanGate, afterReview, afterRisk, pickComments } from "../src/nodes";
+import { afterChecks, afterEscalate, afterImplement, afterMerge, afterPlanGate, afterReview, afterRisk, pickComments } from "../src/nodes";
 import type { DeliveryState } from "../src/state";
 
 const deps = {
@@ -22,6 +22,13 @@ const s = (over: Partial<DeliveryState>): DeliveryState =>
 test("low-risk plans skip the human gate; others don't", () => {
   assert.equal(afterRisk(deps)(s({})), "implement");
   assert.equal(afterRisk(deps)(s({ plan: { summary: "", steps: [], risk: "medium" } })), "approvePlan");
+});
+
+test("an empty diff skips checks and review and goes to you", () => {
+  const online = { ...deps, offline: false };
+  assert.equal(afterImplement(online)(s({ diff: "" })), "escalate");
+  assert.equal(afterImplement(online)(s({ diff: "diff --git a/x b/x" })), "runChecks");
+  assert.equal(afterImplement(deps)(s({ diff: "" })), "runChecks", "offline runs replay a diff file");
 });
 
 test("failing checks loop until the stop rule, then escalate", () => {

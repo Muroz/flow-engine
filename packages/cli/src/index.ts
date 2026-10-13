@@ -39,6 +39,7 @@ import {
 import {
   buildDeliveryGraph,
   registerDeliveryMocks,
+  unmetDependencies,
   worktreeDiff,
   worktreePath,
   writeWalkthrough,
@@ -184,6 +185,9 @@ switch (command) {
 
   case "deliver": {
     if (!task) throw new Error("deliver needs --task");
+    // An agent working without its dependencies' code has nothing to build on.
+    const unmet = resumed || deps.offline ? [] : unmetDependencies(config.repoDir, config.project, task.dependsOn, args.base!);
+    if (unmet.length) throw new Error(`${task.id} depends on work that isn't in ${args.base} yet:\n${unmet.map((u) => `  - ${u}`).join("\n")}`);
     const runId = resumed?.runId ?? newRunId(`deliver-${task.id}`);
     const graph = buildDeliveryGraph(deps, { checkpointer: checkpointer() });
     const final = await runGated<DeliveryState>(graph, { task, diffSource, base: args.base!, runId }, runId);

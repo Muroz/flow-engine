@@ -9,7 +9,7 @@ START → makePlan ◄──(revise)──────────────�
            ▼                                    ▲      │ approve
         assessRisk ─(above autoApproveRisk)─────┘      ▼
            └─(otherwise)──────────────────────────► implement ◄───────────────────────────┐
-                                                       ▼                                  │
+                                                       ▼ (no changes: escalate)           │
                                                    runChecks ─(fail, attempts left)───────┤
                                                        ▼ pass                             │
                                                runReview (subgraph) ─(fix, attempts left)─┤
@@ -31,12 +31,12 @@ The flow has three gates: the plan, only when it is risky; an escalation, only w
 | `makePlan` | Generative | Writes a short plan from the task, its acceptance criteria and its ADRs. After a `revise`, it rewrites the plan from your notes. |
 | `assessRisk` | Judge | Rates the plan low, medium or high. It never rates below the risk that planning gave the task. |
 | `approvePlan` | Gate | Shows you the numbered steps and the acceptance criteria when the risk is above `delivery.autoApproveRisk`. Options: `approve`, `revise` with notes, or `reject`. |
-| `implement` | Agent | Writes the code. See [Agents](#agents). |
+| `implement` | Agent | Writes the code. See [Agents](#agents). When the agent changes nothing, the flow skips checks and review and goes to the escalate gate. |
 | `runChecks` | Deterministic | Runs `delivery.checks` in the worktree, in order, and records each command's result and time. It stops at the first failure, and the failure's output becomes a note for the next attempt. |
 | `runReview` | Subgraph | Runs the review flow on the diff and the task, and maps back only the verdict, findings and report. Each finding becomes a note for the next attempt, with the reviewer's reason. |
 | `escalate` | Gate | See [When the flow gets stuck](#when-the-flow-gets-stuck). |
 | `explainWork` | Generative | Writes `walkthrough.md`, a plain-language account of the work. See [Walkthroughs](#walkthroughs). |
-| `approveMerge` | Gate | Shows the walkthrough's summary, each check's result, the review verdict and the open review comments, numbered. Options: `merge`, `fix` or `reject`. See [Fixing comments before you merge](#fixing-comments-before-you-merge). |
+| `approveMerge` | Gate | Shows the walkthrough's summary, each check's result, the review verdict and the open review comments, numbered. Options: `merge`, `fix` or `reject`. `merge` commits the worktree on `flows/<task>` and fast-forwards the base to it. See [Fixing comments before you merge](#fixing-comments-before-you-merge). |
 
 ## Rounds and what you see
 
@@ -60,9 +60,9 @@ The Claude Code agent runs on your Claude plan. Its transcript reports a list pr
 
 ## When the flow gets stuck
 
-The escalate gate opens when the flow runs out of attempts, hits the cost limit, or a reviewer wants a person to look. It shows:
+The escalate gate opens when the agent changes nothing, the flow runs out of attempts, it hits the cost limit, or a reviewer wants a person to look. It shows:
 
-- why it stopped, including the spend when it hit the cost limit
+- why it stopped, including the spend when it hit the cost limit, or the agent's last message when it changed nothing
 - one line per review round so far, such as `round 2: fix: 2 major/blocker finding(s)`
 - the last check failure, if checks failed
 - every open finding, blocking ones first, each with its file, line and the reviewer's reason
@@ -70,7 +70,7 @@ The escalate gate opens when the flow runs out of attempts, hits the cost limit,
 The full review report for the last round is linked from the gate. Options:
 
 - **`retry`** grants `delivery.retryAttempts` more attempts and starts the cost count again. Notes you add go to the agent.
-- **`accept`** takes the work as it is and moves on to the walkthrough and the merge gate.
+- **`accept`** takes the work as it is and moves on to the walkthrough and the merge gate. The gate leaves it out when the agent changed nothing.
 - **`abort`** ends the run, after you confirm.
 
 ## Fixing comments before you merge
@@ -106,7 +106,7 @@ Before the merge gate, `explainWork` explains the work for someone who hasn't re
 
 Walkthroughs help you follow the work. They are not project documentation, so they stay under `runs/` and never go into the project repo.
 
-On `merge`, the flow adds the walkthrough's summary and a link to `runs/<project>/journal.md`. Read that one file to follow the whole project, task by task. Offline runs skip the journal.
+On `merge`, once the base holds the work, the flow adds the walkthrough's summary and a link to `runs/<project>/journal.md`. Read that one file to follow the whole project, task by task. Offline runs skip the journal.
 
 To write a walkthrough outside a delivery run, for example for work you merged earlier, use `flows explain`:
 

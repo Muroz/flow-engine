@@ -22,6 +22,8 @@ export type DeliveryState = {
   planFeedback?: string;
   attempts: number; // stop rule counter
   diff?: string;
+  /** The agent's final message from the last round. It explains an empty diff. */
+  agentNote?: string;
   /** The agent's git worktree, when it has one. Checks run here. */
   workdir?: string;
   checks?: { passed: boolean; output: string; results: CheckResult[] };
