@@ -45,10 +45,17 @@ test("review verdicts route to the walkthrough, another attempt, or you", () => 
   assert.equal(afterReview(deps)(s({ review: r("escalate") })), "escalate");
 });
 
-test("escalation: abort ends, retry grants attempts, accept goes to the walkthrough", () => {
-  assert.equal(afterEscalate(deps)(s({ outcome: "escalated" })), END);
-  assert.equal(afterEscalate(deps)(s({ attempts: 2 })), "implement");
-  assert.equal(afterEscalate(deps)(s({ attempts: 3 })), "explainWork");
+test("escalation: abort ends, retry goes back to the agent, accept goes to the walkthrough", () => {
+  assert.equal(afterEscalate(s({ outcome: "escalated" })), END);
+  assert.equal(afterEscalate(s({ escalation: "retry", attempts: 2 })), "implement");
+  assert.equal(afterEscalate(s({ escalation: "accept", attempts: 3 })), "explainWork");
+});
+
+test("escalation follows your choice, not the attempt count", () => {
+  // A review escalate verdict or the cost limit opens the gate with attempts left.
+  assert.equal(afterEscalate(s({ escalation: "accept", attempts: 1 })), "explainWork");
+  // retryAttempts: 0 leaves attempts at the limit after a retry.
+  assert.equal(afterEscalate(s({ escalation: "retry", attempts: 3 })), "implement");
 });
 
 test("spend over the cost limit stops the loop, counting from the last retry", () => {

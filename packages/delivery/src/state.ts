@@ -44,6 +44,8 @@ export type DeliveryState = {
   ledger: PriorFinding[];
   /** What the next implementation attempt must address (from checks or review). */
   fixNotes: string[];
+  /** Your answer at the last escalate gate. `abort` sets `outcome` instead. */
+  escalation?: "retry" | "accept";
   /** Spend at the last retry or fix. The cost limit counts from here. */
   budgetFrom: number;
   /** Plain-language explanation of the work, written before the merge gate. */

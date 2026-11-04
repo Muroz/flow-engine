@@ -66,6 +66,7 @@ export const DeliveryAnnotation = Annotation.Root({
   ledger: Annotation<DeliveryState["ledger"]>({ reducer: concat, default: () => [] }),
   fixNotes: Annotation<string[]>({ reducer: (_a, b) => b, default: () => [] }),
   planFeedback: Annotation<string | undefined>,
+  escalation: Annotation<DeliveryState["escalation"]>,
   budgetFrom: Annotation<number>({ reducer: (_a, b) => b, default: () => 0 }),
   walkthrough: Annotation<DeliveryState["walkthrough"]>,
   outcome: Annotation<DeliveryState["outcome"]>,
@@ -92,7 +93,7 @@ export function buildDeliveryGraph(deps: FlowDeps, opts: { checkpointer?: BaseCh
     .addConditionalEdges("implement", afterImplement(deps), ["runChecks", "escalate"])
     .addConditionalEdges("runChecks", afterChecks(deps), ["runReview", "implement", "escalate"])
     .addConditionalEdges("runReview", afterReview(deps), ["explainWork", "implement", "escalate"])
-    .addConditionalEdges("escalate", afterEscalate(deps), ["implement", "explainWork", END])
+    .addConditionalEdges("escalate", afterEscalate, ["implement", "explainWork", END])
     .addEdge("explainWork", "approveMerge")
     .addConditionalEdges("approveMerge", afterMerge, ["implement", END])
     // Human gates need a checkpointer: that's what lets the graph pause and resume.

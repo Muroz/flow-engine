@@ -405,13 +405,14 @@ export const escalate =
     });
     if (d.decision === "retry") {
       return {
+        escalation: "retry",
         attempts: Math.max(0, maxAttempts - retryAttempts),
         budgetFrom: totalCost(s.log),
         fixNotes: [...s.fixNotes, ...(d.notes ? [d.notes] : [])],
         log: [logEntry("delivery.escalate", { note: "retry" })],
       };
     }
-    if (d.decision === "accept") return { log: [logEntry("delivery.escalate", { note: "accepted as-is" })] };
+    if (d.decision === "accept") return { escalation: "accept", log: [logEntry("delivery.escalate", { note: "accepted as-is" })] };
     return { outcome: "escalated", log: [logEntry("delivery.escalate", { note: "aborted" })] };
   };
 
@@ -523,10 +524,7 @@ export const afterReview = (deps: FlowDeps) => (s: DeliveryState) => {
   return "escalate";
 };
 
-export const afterEscalate = (deps: FlowDeps) => (s: DeliveryState) => {
-  if (s.outcome) return END;
-  // retry lowers attempts below the limit; accept leaves them at it.
-  return s.attempts < deps.config.delivery.maxAttempts ? "implement" : "explainWork";
-};
+/** Routes on your answer. The gate can open with attempts left, so the attempt count can't stand in for it. */
+export const afterEscalate = (s: DeliveryState) => (s.outcome ? END : s.escalation === "accept" ? "explainWork" : "implement");
 
 export const afterMerge = (s: DeliveryState) => (s.outcome ? END : "implement");
