@@ -7,7 +7,7 @@ models:
   # opus, default) to run that role on the local Claude Code CLI instead.
   default: anthropic/claude-sonnet-5.5
   reviewer: openai/gpt-5.5        # different vendor than the implementer on purpose
-  judge: openai/gpt-5.4-mini      # only used when Jev isn't available
+  judge: openai/gpt-5.4-mini      # the review verifier, and the judge when Jev isn't available
 
 openrouter:
   provider:

@@ -4,6 +4,17 @@ The planning flow turns a client brief into the artifacts that delivery and revi
 
 Every node runs, online and offline. The prompts in `prompts/planning/` are first drafts, so expect to rework them.
 
+## How a plan comes together
+
+1. **Discovery.** A judge checks whether the brief names the users, the core flows, the constraints and what success looks like. If it doesn't, a model writes questions, and you answer them. This repeats at most twice.
+2. **Requirements and scope.** A model turns the brief into numbered, testable requirements, each marked MVP (the first release) or later. You approve the scope, or tell it what to change.
+3. **Architecture.** A model proposes three architectures in parallel, each from a different angle: the simplest option, one built to scale and one that buys instead of building. Another model compares them and recommends one. You pick one, adjust one or ask for three new ones.
+4. **ADRs.** A model writes ADRs (architecture decision records) for the chosen option: short files that each record one decision, why it was made and what it costs. Delivery and review read them later.
+5. **Tasks.** A model splits the MVP into tasks, each with dependencies, acceptance criteria, a risk and a size. A judge checks that every MVP requirement is covered, and the breakdown runs once more if it isn't.
+6. **Plan gate.** You see a one-screen summary of the plan. On `approve`, the flow writes the PRD, the ADRs and `plan/tasks.yaml`.
+
+You decide at four points: the discovery questions, the scope, the architecture and the final plan.
+
 ## Graph
 
 ```

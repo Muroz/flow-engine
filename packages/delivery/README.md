@@ -2,6 +2,19 @@
 
 The delivery flow takes one planned task from plan to merge gate. It writes a plan, decides whether you need to see it, has an agent write the code, runs your checks and runs the review flow. It loops until the work passes or a stop rule hands it to you.
 
+## How a task moves through it
+
+1. **Plan.** A model reads the task from `plan/tasks.yaml`, its acceptance criteria and the ADRs (architecture decision records) it links to, and writes a short numbered plan.
+2. **Risk.** A judge rates how risky it is to carry out the plan without a person reading it first, looking for things such as data migrations, auth, payments and public API changes. It never rates lower than the risk the planning flow gave the task. A plan above `delivery.autoApproveRisk`, `low` by default, waits for you to approve it.
+3. **Implement.** A coding agent writes the code in its own git worktree, a separate checkout on branch `flows/<task>`, so your own checkout never changes. See [Agents](#agents).
+4. **Checks.** Your own commands, such as tests, lint and a build, run against the agent's code. A failure goes back to the agent as a note, and the flow returns to step 3. See [Checks](#checks).
+5. **Review.** Once the checks pass, the [review flow](../review/README.md) reads the change. If it asks for fixes, they go back to the agent as notes, and the flow returns to step 3.
+6. **Stop rule.** After `delivery.maxAttempts` attempts, 3 by default, or `delivery.maxCostUsd` of model spend, the flow stops and asks you what to do. It also asks when the review wants a person to decide, or when the agent changed nothing. See [When the flow gets stuck](#when-the-flow-gets-stuck).
+7. **Walkthrough.** A model writes a plain-language account of the work for someone who hasn't read the code. See [Walkthroughs](#walkthroughs).
+8. **Merge gate.** You see the walkthrough, the checks and the review, then choose `merge`, `fix` or `reject`.
+
+You see the plan only when it is risky, the escalate gate only when the flow is stuck, and the merge gate every time.
+
 ## Graph
 
 ```
@@ -73,6 +86,35 @@ A round is one pass through `implement`, `runChecks` and `runReview`. While a ro
 
 `delivery.maxAttempts`, 3 by default, limits the rounds before the flow asks you. A `retry` or `fix` grants `delivery.retryAttempts` more, 1 by default.
 
+## Checks
+
+Checks are the commands that prove the code works before any model reviews it. The engine has no checks of its own: you list them under `delivery.checks` in `.flows.yaml`, as you would in CI.
+
+```yaml
+delivery:
+  checks:
+    - pnpm lint
+    - pnpm test
+    - pnpm build
+```
+
+After each attempt, `runChecks` does this:
+
+- **Where:** it runs each command through the shell in the agent's worktree, so the checks test the agent's code. The `diff-file` agent applies its diff in the same kind of worktree, so its checks test the diff too. When it can't make a worktree, for example because `--repo` isn't the root of a git repository, its checks run in the repo as it is, and the implement line says so.
+- **Order:** it runs the commands in the order you list them, each with a ten-minute limit. Exit code 0 passes. The first failure stops the run, and the commands after it show as `not run`. Put the fastest checks first.
+- **On failure:** the last 2,000 characters of the failed command's output become a note for the agent's next attempt, and the round counts toward `delivery.maxAttempts`. The review doesn't run, so no model money goes on code that fails its own checks.
+- **On success:** the review runs.
+
+The CLI prints one line per command, such as `✓ pnpm lint (4.1s)`, `✗ pnpm test (3.2s)` or `· pnpm build (not run)`. When the flow runs out of attempts, the escalate gate shows the failed command and the last six lines of its output. The merge gate shows each check's result.
+
+The Claude Code agent may run exactly these commands in Bash, and nothing else, so it can run the tests itself before it finishes. `delivery.agentTools` widens that list.
+
+With no checks listed, the step counts as passed and the review runs on its own. Offline runs skip checks, since the mock agent writes no code.
+
+## Agent notes and declines
+
+Each failed check or kept review finding becomes a note for the next attempt. In a follow-up round, the agent's prompt says to fix only those notes and change nothing else. When a note contradicts an ADR, a project standard, an acceptance criterion or an earlier round's request, the agent leaves it alone and ends its reply with a line such as `Declined: Move the client under src/lib — ADR-0007 puts it in src/db`. Delivery records each decline, and the next review and the escalate gate show it, so a person decides instead of the agent and the reviewer going back and forth.
+
 ## Cost
 
 Each review round calls six specialists, so the review is most of a run's model cost. Three settings keep it down:
@@ -112,7 +154,10 @@ Your notes pick what goes back:
 
 `delivery.agent` in `.flows.yaml` picks who writes the code.
 
-- **`diff-file`**, the default, replays the diff from `--diff-file` (or `git diff --base...--head`) on every attempt. The sample flow and the tests use it, and `--offline` always does.
+- **`diff-file`**, the default, replays the diff from `--diff-file` (or `git diff --base...--head`) on every attempt. It applies the diff in a git worktree on branch `flows/<task>`, reset to the branch's last commit first, so checks and `merge` act on the change. A diff that doesn't apply to the base sends the run to the escalate gate with git's reason. The sample flow and the tests use it, and `--offline` always does, without a worktree.
+
+  > **Warning:** each `diff-file` attempt discards uncommitted changes in the task's worktree. Don't switch a task from `claude-code` to `diff-file` while the agent's work there is uncommitted.
+
 - **`claude-code`** runs Claude Code headless in a git worktree on branch `flows/<task>`. The code is in `src/agents/claude-code.ts`, and [docs/wiring.md](../../docs/wiring.md#3-coding-agent) explains how to turn it on.
 
 With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The prompt also lists the project's `standards` files and tells the agent to read them first. In a follow-up round, it tells the agent to fix only those notes and leave the rest alone. `agentPrompt` in `src/nodes.ts` builds the prompt.

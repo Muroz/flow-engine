@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { ENGINE_ROOT } from "@flows/core";
 import { agentModel, describeEvent, ensureWorktree, mergeWorktree, snapshotTree, treeDiff, unmetDependencies, worktreeDiff } from "../src/agents/claude-code";
+import { replayDiff } from "../src/agents/diff-file";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
 
@@ -179,4 +180,40 @@ test("unmetDependencies flags uncommitted and unmerged dependencies, and clears 
 
   git(repo, "merge", "-q", "--ff-only", "flows/T-001");
   assert.deepEqual(unmetDependencies(repo, project, ["T-001"], "main"), []);
+});
+
+test("replayDiff applies the diff in the task's worktree, fresh on every attempt", (t) => {
+  const repo = tempRepo();
+  const project = `test-replay-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  writeFileSync(join(repo, ".env"), "KEY=1\n");
+  const diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-one\n+two\n";
+
+  const dir = replayDiff(repo, project, "T-001", "main", diff, [".env"]);
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), "two\n");
+  assert.match(worktreeDiff(dir, "main"), /^\+two$/m);
+
+  // A leftover from the last attempt is gone, the diff applies again, and the copied .env stays.
+  writeFileSync(join(dir, "stray.txt"), "x\n");
+  assert.equal(replayDiff(repo, project, "T-001", "main", diff, [".env"]), dir);
+  assert.equal(existsSync(join(dir, "stray.txt")), false);
+  assert.equal(readFileSync(join(dir, "a.txt"), "utf8"), "two\n");
+  assert.equal(readFileSync(join(dir, ".env"), "utf8"), "KEY=1\n");
+
+  // The main checkout is untouched.
+  assert.equal(git(repo, "status", "--porcelain", "--untracked-files=no"), "");
+});
+
+test("replayDiff refuses a diff that doesn't apply to the base", (t) => {
+  const repo = tempRepo();
+  const project = `test-replay-bad-${process.pid}`;
+  t.after(() => {
+    rmSync(join(ENGINE_ROOT, "runs", project), { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const bad = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-nope\n+two\n";
+  assert.throws(() => replayDiff(repo, project, "T-001", "main", bad), /doesn't apply to main/);
 });

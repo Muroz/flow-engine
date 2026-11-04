@@ -1,6 +1,18 @@
 # @flows/review
 
-The review flow reads a diff and returns a verdict (`pass`, `fix` or `escalate`) and a one-screen Markdown report. It runs on its own through `flows review`, and delivery runs it as a subgraph after every attempt.
+The review flow reads a diff and returns a verdict (`pass`, `fix` or `escalate`) and a one-screen Markdown report. It runs on its own through `flows review`, and delivery runs it as a subgraph after every attempt whose checks pass.
+
+## How a review works
+
+1. **Gather context.** It reads the diff, the task and its acceptance criteria when you pass `--task`, the project's ADRs (architecture decision records), its conventions and its standards files.
+2. **Specialists review.** Up to six reviewer models read the diff in parallel, each from one angle: does it meet the task (`spec`), is it correct, is it secure, is it tested, does it follow the architecture, and are its docs clear. Each sees only the context its job needs, and each returns findings: a problem, where it is, how severe it is and why.
+3. **Merge duplicates.** Findings from different reviewers about the same lines become one finding.
+4. **Verify.** Another model checks each finding against the whole file, the ADRs, the standards and what earlier rounds asked for. It throws out findings it can show are wrong, and flags ones that would break a rule or undo an earlier fix.
+5. **Triage.** A judge rates how severe each remaining finding is, on one shared scale. See [Severity](#severity).
+6. **Decide.** Plain code, not a model, turns the findings into a verdict: `escalate` when a person must decide, `fix` when something major is left, and `pass` otherwise. See [Verdict rules](#verdict-rules).
+7. **Report.** It writes a one-screen report: the verdict, the findings that matter and each step's model and cost.
+
+In delivery, each `fix` finding goes back to the coding agent as a note, and an `escalate` stops the loop and asks you.
 
 ## Graph
 

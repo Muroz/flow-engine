@@ -13,6 +13,6 @@ A tiny order API that the sample flows run against. It isn't a working app. It h
 | `changes/T-002.diff` | `pnpm review:sample` and `pnpm deliver:sample`. An attempt at T-002 with problems on purpose. |
 | `src/` | The code the diff applies to. |
 
-`changes/T-002.diff` includes a hard-coded secret, SQL built by string interpolation, no tests, a route that skips the repository layer and a swallowed error. The offline review finds all of them and exits with code 2. Offline delivery replays the same diff three times, hits the stop rule and escalates.
+`changes/T-002.diff` includes a hard-coded secret, SQL built by string interpolation, no tests, a route that skips the repository layer and a swallowed error. The offline review finds all of them and exits with code 2. Offline delivery skips the checks, replays the same diff three times, hits the stop rule and escalates. The sample has no `package.json`, so its `npm test` check would fail in a live run.
 
-The sample project lives inside the engine repo and isn't a git repository of its own. The `claude-code` agent refuses to run on it. To try the agent, use a real repo.
+The sample project lives inside the engine repo and isn't a git repository of its own. The `claude-code` agent refuses to run on it, and a live `diff-file` run can't make a worktree, so its checks run in the sample folder without the diff. To try either agent properly, use a real repo.

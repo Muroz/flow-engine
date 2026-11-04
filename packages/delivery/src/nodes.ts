@@ -37,6 +37,7 @@ import { conflictWith, isConflict, rank, type ReviewGraph, type ReviewState } fr
 import { END, interrupt, type LangGraphRunnableConfig } from "@langchain/langgraph";
 import { agentModel, BASE_TOOLS, ensureWorktree, mergeWorktree, runClaudeCode, snapshotTree, treeDiff, worktreeDiff } from "./agents/claude-code";
 import type { CheckResult, DeliveryState, DeliveryUpdate } from "./state";
+import { replayDiff } from "./agents/diff-file";
 import { appendJournal, writeWalkthrough } from "./walkthrough";
 
 const RISKS: readonly Risk[] = ["low", "medium", "high"];
@@ -134,11 +135,25 @@ export const implement =
 
     // Offline runs always replay the diff: the mocks don't write code.
     if (deps.offline || deps.config.delivery.agent === "diff-file") {
-      return {
+      const replay = loadDiff(deps.config, s.diffSource);
+      const note = `round ${round}, attempt ${attempt}/${max}${addressing} (diff-file)`;
+      const done = (update: DeliveryUpdate, extra = "") => ({
         attempts: attempt,
-        diff: loadDiff(deps.config, s.diffSource),
-        log: [logEntry("delivery.implement", { note: `round ${round}, attempt ${attempt}/${max}${addressing} (diff-file)`, details })],
-      };
+        ...update,
+        log: [logEntry("delivery.implement", { note: note + extra, details })],
+      });
+      if (deps.offline) return done({ diff: replay });
+      try {
+        // Apply the diff in the task's worktree, so the checks and the merge act on the change.
+        const workdir = replayDiff(deps.config.repoDir, deps.config.project, s.task.id, s.base, replay, deps.config.delivery.copyToWorktree);
+        return done({ workdir, diff: worktreeDiff(workdir, s.base), tree: snapshotTree(workdir) });
+      } catch (e: any) {
+        const why = String(e.message).split("\n")[0]!;
+        // A diff that doesn't apply has nothing to check: the empty diff sends it to you, with the reason.
+        if (why.startsWith("The diff doesn't apply")) return done({ diff: "", agentNote: why }, `: ${why}`);
+        // No worktree is possible, for example outside a git repo: checks run in the repo as it is.
+        return done({ diff: replay }, `, no worktree (${why}), so checks run in the repo as it is`);
+      }
     }
 
     const workdir = ensureWorktree(deps.config.repoDir, deps.config.project, s.task.id, s.base, deps.config.delivery.copyToWorktree);

@@ -166,7 +166,7 @@ To mix backends in CI, drop `--claude-code`, set the models in `.flows.yaml` and
 
 ## 3. Coding agent
 
-Delivery ships with two agents. `diff-file` replays a fixed diff, for demos and tests. `claude-code` runs [Claude Code](https://code.claude.com/docs) headless and writes real code. For each attempt, the `claude-code` agent does these things:
+Delivery ships with two agents. `diff-file` replays a fixed diff in the task's worktree, for demos and tests. `claude-code` runs [Claude Code](https://code.claude.com/docs) headless and writes real code. For each attempt, the `claude-code` agent does these things:
 
 1. Creates or reuses a git worktree on branch `flows/<task>`, under `runs/<project>/worktrees/<task>/` in the engine. Your main checkout never changes.
 2. Runs `claude -p` in the worktree with the task, the plan, the ADR decisions, your conventions, the list of standards files to read first and the notes from the last failed attempt.
