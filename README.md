@@ -1,6 +1,8 @@
 # flow-engine
 
-flow-engine runs software work as graphs of small steps. It uses LangGraph.js for orchestration, OpenRouter or your local Claude Code for models and Jev for judges. You approve intent (scope, architecture, risky plans) and outcomes (merges). The graph runs everything in between, puts a judge or plain code in front of every branch and logs every step.
+flow-engine uses AI models to plan, build and review software, and stops for your approval at the points that matter. It turns a client brief into requirements, an architecture and a task list. It has a coding agent build each task in its own git branch, runs your tests, and reviews every change with several AI reviewers before you decide to merge it. You can also use the review on its own, on any branch or pull request.
+
+Each piece of work runs as a graph of small steps. Plain code makes every decision it can, a judge model answers the small yes-or-no questions it can't, and you approve the scope, the architecture, risky plans and every merge. Every step is logged with its model and cost.
 
 It has three flows:
 
@@ -15,19 +17,32 @@ It has three flows:
                                            └────────────────────┘
 ```
 
-| Flow | Input | Output | Status |
-|---|---|---|---|
-| [review](packages/review/README.md) | A diff, and optionally a task | A verdict (`pass`, `fix` or `escalate`) and a one-screen report | Ready for real use |
-| [delivery](packages/delivery/README.md) | One task from `plan/tasks.yaml` | Code on branch `flows/<task>`, reviewed and approved by you, with a plain-language walkthrough | Ready to try with Claude Code as the agent |
-| [planning](packages/planning/README.md) | A client brief | A PRD, ADRs and `plan/tasks.yaml` | Runs end to end; the prompts are first drafts |
+| Flow | What it does | You give it | You get | Status |
+|---|---|---|---|---|
+| [planning](packages/planning/README.md#how-a-plan-comes-together) | Asks about gaps in the brief, writes requirements, proposes three architectures and splits the work into tasks | A client brief | A PRD, ADRs and `plan/tasks.yaml` | Runs end to end; the prompts are first drafts |
+| [delivery](packages/delivery/README.md#how-a-task-moves-through-it) | Plans one task, has an agent write the code, runs your checks and the review, and loops until it passes or needs you | One task from `plan/tasks.yaml` | Code on branch `flows/<task>`, reviewed and approved by you, with a plain-language walkthrough | Ready to try with Claude Code as the agent |
+| [review](packages/review/README.md#how-a-review-works) | Has up to six specialist reviewers read a change, checks each finding and decides whether it passes | A diff, and optionally a task | A verdict (`pass`, `fix` or `escalate`) and a one-screen report | Ready for real use |
+
+Most people start with review: point `flows review` at a branch you already have, as [Use it on your own project](#use-it-on-your-own-project) shows. When you start a project from a brief, run `flows plan` once, then `flows deliver` its tasks one at a time. Delivery runs the review on every attempt, so you don't run it separately there.
+
+## Words used here
+
+- **Gate:** a point where the flow stops and asks you to choose, such as `approve`, `revise` or `merge`. Each gate fits on one screen and links to a file with the full text.
+- **Judge:** a model that answers short typed questions, such as yes or no, or one of a few levels, so plain code can act on the answer. [Jev](https://console.typesafe.ai) answers them when you have a TypeSafe key and the project doesn't restrict its providers; otherwise an ordinary model does.
+- **PRD:** product requirements document, the list of what to build.
+- **ADR:** architecture decision record, a short file that records one technical decision, why it was made and what it costs. Delivery and review check the code against them.
+- **Task:** one unit of work in `plan/tasks.yaml`, with acceptance criteria, dependencies and a risk.
+- **Finding:** one problem a reviewer reports, with where it is, how severe it is and why.
+- **Verdict:** the review's answer: `pass`, `fix` (send it back to the agent) or `escalate` (a person must decide).
+- **Worktree:** a second checkout of your repo in its own folder, on its own branch, so the agent never touches your working copy.
+- **Run:** one execution of a flow. Its output goes to `runs/<project>/<run id>/` in this repo.
 
 ## Requirements
 
 - Node.js 20.12 or later. The CLI loads `.env` with `process.loadEnvFile`, which arrived in 20.12.
 - pnpm 9. Run `corepack enable` if you don't have it.
 - git.
-- For live runs, an [OpenRouter](https://openrouter.ai) key, the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI signed in on your `PATH`, or both. [Model backends](#model-backends) explains how to choose. A [TypeSafe](https://console.typesafe.ai) key for Jev is optional.
-- For delivery with a real agent, the Claude Code CLI.
+- For live runs, an [OpenRouter](https://openrouter.ai) key, the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI signed in on your `PATH`, or both. [Model backends](#model-backends) explains how to choose. The Claude Code CLI is also the coding agent, so delivery with a real agent needs it. A [TypeSafe](https://console.typesafe.ai) key for Jev is optional.
 
 ## Quick start
 
@@ -84,6 +99,8 @@ Without `--yes`, each human gate asks you in the terminal. Every gate also offer
    ```
 
 `flows review` exits with code 2 when the verdict isn't `pass`, so it can gate CI. Each run writes its report to `runs/<project>/<run id>/` in this repo. That folder is git-ignored, and the flows never write run output into your project.
+
+Once reviews work for you, try delivery: set `delivery.agent: claude-code` in a low-risk project's `.flows.yaml` and deliver one small task. [Coding agent](docs/wiring.md#3-coding-agent) explains the setup.
 
 [docs/wiring.md](docs/wiring.md) walks through the rest in order: CI, the coding agent, gates away from the terminal and closing the loop. [docs/configuration.md](docs/configuration.md) lists every `.flows.yaml` setting.
 
@@ -143,57 +160,14 @@ packages/
   cli/        the flows command and the terminal gate driver
 prompts/      one markdown prompt per generative node
 examples/     sample-project: config, ADR, tasks and a diff that is bad on purpose
-docs/         wiring guide and configuration reference
+docs/         wiring guide, configuration reference and flow design guide
 scripts/      verify.sh
 runs/         run output, git-ignored
 ```
 
 Each package has its own README: [core](packages/core/README.md), [review](packages/review/README.md), [delivery](packages/delivery/README.md), [planning](packages/planning/README.md) and [cli](packages/cli/README.md). [prompts](prompts/README.md) and [the sample project](examples/sample-project/README.md) have one too.
 
-Each flow package has the same four source files. Copy the pattern when you add a flow:
-
-| File | What goes in it |
-|---|---|
-| `state.ts` | Plain TypeScript types for the state, with no framework imports. |
-| `nodes.ts` | Node functions that take state and return a partial update, plus the routing functions. You can test them without building a graph. |
-| `graph.ts` | The LangGraph `Annotation` (the state plus its reducers) and the wiring. The header comment holds the diagram. |
-| `mocks.ts` | Offline responses, so every node and edge runs with no network. |
-
-## How to design a flow
-
-Every graph framework asks you to define the same five things.
-
-1. **State.** Write the type first. Include the input, the artifacts (a path plus a short summary), loop counters, gate decisions and a log. If you can't write the state, you don't understand the flow yet.
-2. **Nodes.** Give each node one of four kinds before you write it, and push as much work as you can into the first kind:
-   - Deterministic: plain code such as git, tests, file I/O and policy.
-   - Generative: an OpenRouter call that writes text or code.
-   - Judge: a Jev call that returns a typed decision, such as yes or no, one of N or a score.
-   - Human: a gate, built on `interrupt()`.
-3. **Edges.** There are four kinds:
-   - Static: A always leads to B.
-   - Conditional: a function of state picks the next node.
-   - Fan-out: `Send` starts one branch per item, and a reducer merges what they return.
-   - Loop: always with a stop rule.
-
-   Put a judge or plain policy code in front of every conditional edge.
-4. **Gates.** Gate at the ends (intent and outcome), not in the middle. Let risk decide: low risk with high confidence goes ahead, and anything else waits for you. Keep every gate summary to one screen.
-5. **Context.** Give each node a view of the state, not all of it. `packages/review/src/reviewers.ts` shows how. Pass large things by path, and summarise at boundaries. The model that checks the work should differ from the model that made it.
-
-Three LangGraph rules have already caused bugs here:
-
-- **Parallel writes need reducers.** Any field that fan-out branches write needs a `concat` reducer, as `rawFindings`, `options` and `log` have. Don't return such a field from a later node unless you mean to append to it.
-- **A resumed node runs again from its first line.** After `interrupt()`, LangGraph re-runs the whole node. Keep model calls in the node before the gate, not in the gate node.
-- **A node can't share a name with a state key.** LangGraph refuses to build the graph. That is why the review node that writes `report` is called `writeReport`.
-
-## Where the tools fit
-
-| Layer | Tool | Code |
-|---|---|---|
-| Generative nodes | OpenRouter. `.flows.yaml` sets a model per role, and `openrouter.provider` enforces a client's data policy. | `packages/core/src/models.ts` |
-| Judge nodes | Jev asks `noul` (yes or no), `choice` and `score` questions over one piece of state, several in one call. It calls TypeSafe directly, because OpenRouter only offers Jev as a model router, without these question types. Without a Jev key, or on a project with a provider allow-list, an LLM judge with the same interface takes over. | `packages/core/src/judge.ts` |
-| Coding agent | Claude Code, headless, in one git worktree per task. | `packages/delivery/src/agents/claude-code.ts` |
-| Orchestration | LangGraph.js: `StateGraph`, `Send`, `interrupt` and a checkpointer. | `packages/*/src/graph.ts` |
-| Knowledge | ADRs and `tasks.yaml`. | `packages/core/src/artifacts.ts` |
+To add a flow or change how one works, read [Designing flows](docs/designing-flows.md) first.
 
 ## Project repos and client repos
 
@@ -216,11 +190,9 @@ For a client repo that shouldn't carry these files, keep them in a workspace fol
 - The Jev client follows the REST shape in TypeSafe's launch docs (`POST /v1/systemone`), and nobody has checked it against the live API yet. If calls fail, compare it with the current API reference. Only `JevJudge` needs to change.
 - There is no eval set yet, so you can't yet measure whether a prompt change helped.
 
-## Next steps
+## Roadmap
 
-- [ ] Run `flows review` on a real branch of your own.
-- [ ] Set `delivery.agent: claude-code` on a low-risk project and deliver one small task.
-- [ ] Add a golden-diff eval set under `evals/` before you tune the review prompts.
+- [ ] Add a golden-diff eval set under `evals/` before tuning the review prompts.
 - [ ] Answer gates away from the terminal: a `flows resume --decision` command and a notification when a run pauses.
 - [ ] Open a PR from the merge gate.
 - [ ] Add Langfuse tracing and compare judge cost between Jev and the LLM judge.
