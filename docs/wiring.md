@@ -34,8 +34,8 @@ The script installs dependencies, type-checks, runs the unit tests and all three
    ```
 
 2. Add your keys to `.env`:
-   - `OPENROUTER_API_KEY`, which every live run needs.
-   - `TYPESAFE_API_KEY` for Jev, which is optional. Without it, the judges fall back to an LLM judge through OpenRouter, which is slower and costs more. Jev calls go straight to TypeSafe, not through OpenRouter; [Client repos](#client-repos) explains what that means for client code.
+   - `OPENROUTER_API_KEY`, which a live run needs when any role uses an OpenRouter model. To run without it, see [Without an OpenRouter key](#without-an-openrouter-key).
+   - `TYPESAFE_API_KEY` for Jev, which is optional. Without it, the judges fall back to an LLM judge on `models.judge`, which is slower and costs more. Jev calls go straight to TypeSafe, not through OpenRouter; [Client repos](#client-repos) explains what that means for client code.
 3. Check the model slugs in your project's `.flows.yaml` against [openrouter.ai/models](https://openrouter.ai/models). Keep `reviewer` on a different vendor from `default` and `implementer`.
 4. Run the live smoke test. It reviews the sample diff with real models, which costs a few cents:
 
@@ -88,7 +88,7 @@ openrouter:
     only: [anthropic]  # whichever providers the client allows
 ```
 
-Jev calls go straight to TypeSafe and skip this allow-list. Setting `only` keeps them off: under `judge.engine: auto`, a project with an allow-list uses the LLM judge through OpenRouter, even when `TYPESAFE_API_KEY` is set. If the client approves TypeSafe, add this to the workspace config:
+Jev calls go straight to TypeSafe and skip this allow-list. Setting `only` keeps them off: under `judge.engine: auto`, a project with an allow-list uses the LLM judge on `models.judge`, even when `TYPESAFE_API_KEY` is set. If the client approves TypeSafe, add this to the workspace config:
 
 ```yaml
 judge:
@@ -169,8 +169,8 @@ To mix backends in CI, drop `--claude-code`, set the models in `.flows.yaml` and
 Delivery ships with two agents. `diff-file` replays a fixed diff, for demos and tests. `claude-code` runs [Claude Code](https://code.claude.com/docs) headless and writes real code. For each attempt, the `claude-code` agent does these things:
 
 1. Creates or reuses a git worktree on branch `flows/<task>`, under `runs/<project>/worktrees/<task>/` in the engine. Your main checkout never changes.
-2. Runs `claude -p` in the worktree with the task, the plan, the ADR decisions, your conventions and the notes from the last failed attempt.
-3. Saves the agent's transcript as `agent-attempt-<n>.json` in the run folder.
+2. Runs `claude -p` in the worktree with the task, the plan, the ADR decisions, your conventions, the list of standards files to read first and the notes from the last failed attempt.
+3. Saves the agent's final result as `agent-<round>.json` and every event it streamed as `agent-<round>.jsonl` in the run folder. A failed run writes `agent-<round>.log` instead.
 4. Stages everything in the worktree and diffs it against `--base`. Checks and review work on that diff.
 
 To turn it on:
@@ -189,7 +189,7 @@ To turn it on:
 
    The agent may run exactly these check commands and nothing else in Bash. To widen that, set `delivery.agentTools` in Claude Code's `--allowedTools` syntax.
 
-   To pick the agent's model, set `models.implementer: claude-code/opus`, or any other `claude-code/` model. Without it, Claude Code uses its own default.
+   To pick the agent's model, set `models.implementer: claude-code/opus`, or any other `claude-code/` model. Without it, the agent uses `claudeCode.model`, which is `opus` by default.
 
 4. Deliver a small, low-risk task:
 
@@ -197,9 +197,9 @@ To turn it on:
    pnpm flows deliver --repo /path/to/project --task T-001 --base main
    ```
 
-Before the merge gate, delivery writes `walkthrough.md` in the run folder: a plain-language account of what changed, how it works, with diagrams where they help, and how to try it. The gate shows its summary. On `merge`, delivery commits the work on `flows/<task>`, fast-forwards the base to it, and the task joins `runs/<project>/journal.md`, which you can read to follow the whole project. [Walkthroughs](../packages/delivery/README.md#walkthroughs) has the details.
+Before the merge gate, delivery writes `walkthrough.md` in the run folder: a plain-language account of what changed, how it works, with diagrams where they help, and how to try it. The gate shows its "In short" and "How it works" sections. On `merge`, delivery commits the work on `flows/<task>`, fast-forwards the base to it, and the task joins `runs/<project>/journal.md`, which you can read to follow the whole project. [Walkthroughs](../packages/delivery/README.md#walkthroughs) has the details.
 
-When the run ends, the CLI prints the worktree path. The changes stay there, staged but not committed, until you act on them.
+When the run ends, the CLI prints the worktree path. Unless you chose `merge`, the changes stay there, staged but not committed, until you act on them.
 
 Delivery reuses a task's worktree on every run, so a second run builds on the first run's changes. To start a task from scratch, remove its worktree and branch:
 

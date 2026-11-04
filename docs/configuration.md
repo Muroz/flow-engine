@@ -74,7 +74,7 @@ Each role can use either backend, and one run can mix them.
 | `models.judge` | `openai/gpt-5.4-mini` | The LLM judge. Only used when Jev isn't. |
 | `models.verifier` | `models.judge` | Checks each review finding before the agent sees it. It reads the whole file, every ADR and standard, and earlier rounds' findings, then calls the finding valid, invalid or a conflict. It always calls this model, even when Jev is the judge. |
 
-`createDeps` in `packages/core/src/deps.ts` checks the roles a run will call before it starts. It fails with the list of roles that need `OPENROUTER_API_KEY` when the key is missing. With `--claude-code`, or `FLOWS_CLAUDE_CODE=1`, it moves every role that isn't already on `claude-code/` to `claude-code/default`.
+`createDeps` in `packages/core/src/deps.ts` checks the roles a run will call before it starts. It fails with the list of roles that need `OPENROUTER_API_KEY` when the key is missing. With `--claude-code`, or `FLOWS_CLAUDE_CODE=1`, it moves every role that isn't already on `claude-code/` to `claude-code/<claudeCode.model>`, which is `claude-code/opus` unless you set `claudeCode.model`. That includes the judge and the verifier.
 
 Each Claude Code call runs `claude -p` from the system temp folder with every tool off, no settings files, no MCP servers and no saved session. The model sees the node's system prompt and message and nothing else, so a project's `CLAUDE.md` never leaks in. Claude Code has no temperature setting, so the flows can't lower it for judges. The cost the report shows is Claude Code's list-price figure. On a Claude plan, that isn't what you pay.
 
@@ -87,13 +87,13 @@ Claude Code sends prompts straight to Anthropic, so `openrouter.provider` can't 
 | `openrouter.provider` | `{ data_collection: deny }` | Sent to OpenRouter as its `provider` routing object. Use it to follow a client's AI policy, for example `only: [anthropic]`. It covers every OpenRouter call, but not Jev or Claude Code. An `only` list without `anthropic` also keeps Claude Code models out. |
 | `judge.engine` | `auto` | `jev` uses Jev and fails without `TYPESAFE_API_KEY`. `llm` uses `models.judge` on its backend. `auto` uses Jev when the key is set and `openrouter.provider.only` isn't, and the LLM judge otherwise. |
 
-Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provider` can't restrict them. Review triage sends Jev each finding with its file's diff. Delivery sends it the task and plan, and planning sends the brief and the task list. Setting `openrouter.provider.only` marks a project as having an AI policy: under `auto`, its judges then use the LLM judge, which follows that policy. Set `judge.engine: jev` on such a project only once the client has approved TypeSafe.
+Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provider` can't restrict them. Review triage sends Jev each finding with its file's diff and the task's title and acceptance criteria. Delivery sends it the task and plan. Planning sends it the brief, and the task list with the text of each requirement it checks. Setting `openrouter.provider.only` marks a project as having an AI policy: under `auto`, its judges then use the LLM judge, which follows that policy. Set `judge.engine: jev` on such a project only once the client has approved TypeSafe.
 
 ### Review
 
 | Key | Default | Meaning |
 |---|---|---|
-| `review.reviewers` | All six | Which specialists run. `spec` only runs with a task that has acceptance criteria. `architecture` only runs when there are ADRs or conventions. `docs` only runs when the diff changes docs or adds comments. |
+| `review.reviewers` | All six | Which specialists run. `spec` only runs with a task that has acceptance criteria. `architecture` only runs when there are ADRs, conventions or a standard listed for it. `docs` only runs when the diff changes docs or adds comments. |
 | `review.minConfidence` | `0.6` | Applies only to findings the verifier couldn't check: the judge drops those it is less sure of than this. The verifier decides the rest, dropping invalid findings and sending conflicts to you. |
 | `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped. `major` makes the flow ask you more often. Findings the verifier ruled out never count. |
 | `review.dropSeverities` | `[nit]` | Severities that never reach you. Add `minor` to see only blocking issues. |
