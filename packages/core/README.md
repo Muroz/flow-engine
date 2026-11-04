@@ -4,14 +4,14 @@ Core holds everything the flows share. It has no LangGraph code, so every flow c
 
 | File | What it holds |
 |---|---|
-| `types.ts` | The contracts between flows: `PlannedTask`, `Finding`, `TriagedFinding`, `Verdict` and `LogEntry`. |
+| `types.ts` | The contracts between flows: `PlannedTask`, `Finding`, `Verification`, `TriagedFinding`, `PriorFinding`, `Verdict` and `LogEntry`. `PriorFinding` is how delivery passes earlier rounds' findings back into review. |
 | `config.ts` | `loadConfig`, which reads `.flows.yaml` and fills in defaults, and `modelFor`, which picks the model for a role. [docs/configuration.md](../../docs/configuration.md) lists every setting. |
-| `deps.ts` | `createDeps`, which builds the model client and judge once per run and checks that every role it will call has a backend. Nodes get them through `FlowDeps` and never read environment variables or build clients themselves. |
+| `deps.ts` | `createDeps`, which builds the model client and judge once per run and checks that every role it will call has a backend. Nodes get them through `FlowDeps` and never read environment variables or build clients themselves. With `--claude-code`, `withClaudeCodeModels` moves every role to Claude Code. `assertClaudeCodeAllowed` refuses Claude Code on a project whose `openrouter.provider.only` leaves out `anthropic`; see [docs/configuration.md](../../docs/configuration.md#models). |
 | `models.ts` | `OpenRouterClient`, `ClaudeCodeClient`, `RoutingModelClient`, `MockModelClient` and `parseJsonReply`. |
 | `judge.ts` | The judge interface and its three engines: `JevJudge`, `LlmJudge` and `MockJudge`. |
 | `artifacts.ts` | Reads tasks, standards, the PRD and diffs, and writes run output under `runs/`. |
 | `adrs.ts` | Reads ADRs with their status and relations, resolves the ADRs a task needs, and checks that links are recorded on both sides. See [ADR format](#adr-format). |
-| `prompts.ts` | `loadPrompt` reads `prompts/<name>.md`, and `render` fills in `{{placeholders}}`. |
+| `prompts.ts` | `loadPrompt` reads `prompts/<name>.md`, and `render` fills in `{{placeholders}}`. `writingRules(audience)` returns the shared writing rules for the project owner or for developers. Walkthroughs, the Claude Code agent's prompt and the `docs` reviewer use it. |
 | `gates.ts` | `GateRequest` and `GateDecision`, the shapes a gate sends and gets back. |
 | `log.ts` | `logEntry` and `totalCost`. |
 
@@ -60,3 +60,7 @@ To add another backend, implement `ModelClient`, give it a prefix and add a rout
 ## Mocks
 
 `MockModelClient` and `MockJudge` return canned answers. Each flow registers its own in `mocks.ts`, keyed on the `tag` a node sends with each model call, such as `review.security` or `delivery.plan`. A request that no responder handles gets an empty JSON object or a placeholder string.
+
+## Tests
+
+`test/adrs.test.ts` covers relations, how a task's ADRs follow supersessions and amendments, and `checkAdrs`. `test/deps.test.ts` covers how the judge engine and backends are picked, `--claude-code` and the Anthropic guard. `test/judge.test.ts` covers how Jev scores map to levels. `test/models.test.ts` covers `ClaudeCodeClient` and `RoutingModelClient`. `test/standards.test.ts` covers project standards and `writingRules`. Run them with `pnpm test` from the engine root.

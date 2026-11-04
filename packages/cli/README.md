@@ -20,6 +20,8 @@ At each gate, the CLI prints a short summary and a numbered list of choices. Typ
 - **`pause`** saves the run and exits. `flows resume <run id>` picks it up at the same gate, even after a restart.
 - **`discard`, `reject` and `abort`** ask you to confirm.
 - **`revise` and `adjust`** need notes and ask until you give some.
+- **Every other choice** asks for optional notes. That is how notes on `retry` or `fix` reach the agent.
+- **`--yes`** picks the first option at every gate, without confirming. At the escalate gate that is `abort`, so an unattended `deliver --yes` that gets stuck ends the run.
 
 While a flow runs, the CLI prints one line per finished step, with its time, cost and a short note. Some steps add detail lines below: each check's result, the notes an attempt is addressing, or the findings a review kept. Review steps that delivery runs print indented. While the coding agent works, the CLI prints one line per tool it uses. On a terminal, a counter shows how long the current step has been running. Each gate starts with what the run has spent on model calls so far, in US dollars.
 
@@ -43,6 +45,10 @@ The CLI saves every planning and delivery run to `runs/checkpoints.db`, and writ
 
 | Code | Meaning |
 |---|---|
-| 0 | Success. For `review`, the verdict was `pass`. |
-| 1 | Bad arguments, a missing task or an error. |
+| 0 | The command finished. For `review`, the verdict was `pass`. `deliver` and `plan` exit 0 whatever you chose at the gates, including `reject`, `abort` and `discard`: the outcome is in the last line and in `state.json`. |
+| 1 | Bad arguments, a missing task, an error, or, for `adrs`, a broken link. |
 | 2 | `review` only: the verdict was `fix` or `escalate`. |
+
+## Tests
+
+`test/drive.test.ts` covers how the CLI reads gate answers: an empty line, choosing by number, confirmation and required notes. Run it with `pnpm test` from the engine root.
