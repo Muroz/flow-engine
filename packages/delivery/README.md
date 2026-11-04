@@ -104,6 +104,8 @@ Before the merge gate, `explainWork` explains the work for someone who hasn't re
 4. **How to try it:** steps you can follow to see it working.
 5. **Worth knowing:** shortcuts, limits, unfixed review findings and follow-up work.
 
+The merge gate shows the "In short" and "How it works" sections, with each diagram replaced by a pointer to the full text in `walkthrough.md`.
+
 Walkthroughs help you follow the work. They are not project documentation, so they stay under `runs/` and never go into the project repo.
 
 On `merge`, once the base holds the work, the flow adds the walkthrough's summary and a link to `runs/<project>/journal.md`. Read that one file to follow the whole project, task by task. Offline runs skip the journal.

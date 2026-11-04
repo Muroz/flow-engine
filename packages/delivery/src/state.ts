@@ -47,7 +47,7 @@ export type DeliveryState = {
   /** Spend at the last retry or fix. The cost limit counts from here. */
   budgetFrom: number;
   /** Plain-language explanation of the work, written before the merge gate. */
-  walkthrough?: { path: string; gist: string };
+  walkthrough?: { path: string; gist: string; howItWorks?: string };
 
   // ── result ──
   outcome?: "merged" | "rejected" | "escalated";

@@ -30,7 +30,8 @@ export type WalkthroughInput = {
   review?: { verdict: string; reason: string };
 };
 
-export type Walkthrough = { path: string; gist: string };
+/** `howItWorks` is missing on runs saved before the merge gate showed it. */
+export type Walkthrough = { path: string; gist: string; howItWorks?: string };
 
 /** Diffs past this size are cut, so one huge generated file can't crowd out the rest. */
 const MAX_DIFF_CHARS = 60_000;
@@ -57,16 +58,29 @@ export async function writeWalkthrough(deps: FlowDeps, input: WalkthroughInput):
   const body = res.text.trim();
   const path = writeRunFile(runDir(deps.config, input.runId), "walkthrough.md", `# ${task.id}: ${task.title}\n\n${body}\n`);
   return {
-    walkthrough: { path, gist: gistOf(body) },
+    walkthrough: { path, gist: gistOf(body), howItWorks: howItWorksOf(body) },
     log: logEntry("delivery.walkthrough", { model: res.model, costUsd: res.costUsd }),
   };
 }
 
 /** The "In short" section, or the first paragraph when the model left it out. */
 export function gistOf(markdown: string): string {
-  const section = markdown.match(/^##\s*In short\s*\n+([\s\S]*?)(?=\n##\s|(?![\s\S]))/im)?.[1];
-  const text = section ?? markdown.split(/\n\s*\n/).find((p) => p.trim() && !p.trim().startsWith("#")) ?? "";
+  const text = sectionOf(markdown, "In short") ?? markdown.split(/\n\s*\n/).find((p) => p.trim() && !p.trim().startsWith("#")) ?? "";
   return text.trim();
+}
+
+/**
+ * The "How it works" section for the merge gate. A terminal can't draw a
+ * Mermaid diagram, so each one becomes a pointer to the full text.
+ */
+export function howItWorksOf(markdown: string): string | undefined {
+  const text = sectionOf(markdown, "How it works");
+  return text?.replace(/```mermaid[\s\S]*?```/g, "(Diagram in the full text.)").trim() || undefined;
+}
+
+/** The body of one `## heading` section, up to the next one. */
+function sectionOf(markdown: string, heading: string): string | undefined {
+  return markdown.match(new RegExp(`^##\\s*${heading}\\s*\\n+([\\s\\S]*?)(?=\\n##\\s|(?![\\s\\S]))`, "im"))?.[1];
 }
 
 /** Adds a merged task to `runs/<project>/journal.md`, newest last. */

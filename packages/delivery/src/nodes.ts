@@ -454,6 +454,7 @@ export const approveMerge =
       detailPath: s.walkthrough?.path,
       summary: [
         ...(s.walkthrough?.gist ? [s.walkthrough.gist, ""] : []),
+        ...(s.walkthrough?.howItWorks ? ["How it works:", "", s.walkthrough.howItWorks, ""] : []),
         `${s.task.title}: ${roundOf(s)} round(s), $${totalCost(s.log).toFixed(2)} in model calls`,
         `Checks: ${s.checks?.results.length ? s.checks.results.map(describeCheck).join("  ") : s.checks ? "skipped" : "not run"}`,
         `Review: ${s.review?.verdict ?? "not run"} (${s.review?.reason ?? ""})`,
