@@ -3,9 +3,11 @@
  *
  *   START → loadContext ─┬─► reviewer(spec)         ─┐
  *                        ├─► reviewer(correctness)  ─┤
- *                        ├─► reviewer(security)     ─┼─► aggregate → verify → triage → decide → writeReport → END
- *                        ├─► reviewer(tests)        ─┤
- *                        └─► reviewer(architecture) ─┘
+ *                        ├─► reviewer(security)     ─┤
+ *                        ├─► reviewer(tests)        ─┼─► aggregate → verify → triage → decide → writeReport → END
+ *                        ├─► reviewer(architecture) ─┤
+ *                        ├─► reviewer(docs)         ─┤
+ *                        └─(no specialist applies)───┘
  *
  * The fan-out uses `Send`: one shared `reviewer` node, invoked once per
  * specialist with a different `currentReviewer`. LangGraph runs the branches

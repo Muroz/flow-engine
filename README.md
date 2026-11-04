@@ -211,8 +211,8 @@ For a client repo that shouldn't carry these files, keep them in a workspace fol
 
 ## Known limits
 
-- Gates only wait while the CLI process runs. The graphs use an in-memory checkpointer, so a run that stops at a gate can't be resumed later. [docs/wiring.md](docs/wiring.md#4-persistent-runs-and-gates-away-from-the-terminal) describes the fix.
-- Approving a merge records the decision. It doesn't push the branch or open a PR.
+- Gates are answered only in the terminal. Runs survive a restart, because the planning and delivery graphs save every step to `runs/checkpoints.db` and `flows resume` picks a paused run up, but you can't answer a gate from your phone or a chat. [docs/wiring.md](docs/wiring.md#4-persistent-runs-and-gates-away-from-the-terminal) describes what that needs.
+- `merge` commits the work on `flows/<task>` and fast-forwards your local base branch to it. It doesn't push or open a PR.
 - The Jev client follows the REST shape in TypeSafe's launch docs (`POST /v1/systemone`), and nobody has checked it against the live API yet. If calls fail, compare it with the current API reference. Only `JevJudge` needs to change.
 - There is no eval set yet, so you can't yet measure whether a prompt change helped.
 
@@ -221,7 +221,7 @@ For a client repo that shouldn't carry these files, keep them in a workspace fol
 - [ ] Run `flows review` on a real branch of your own.
 - [ ] Set `delivery.agent: claude-code` on a low-risk project and deliver one small task.
 - [ ] Add a golden-diff eval set under `evals/` before you tune the review prompts.
-- [ ] Swap `MemorySaver` for `@langchain/langgraph-checkpoint-sqlite` and add `flows resume`, so gates can wait across restarts.
+- [ ] Answer gates away from the terminal: a `flows resume --decision` command and a notification when a run pauses.
 - [ ] Open a PR from the merge gate.
 - [ ] Add Langfuse tracing and compare judge cost between Jev and the LLM judge.
 - [ ] Let delivery write a replan proposal when a task contradicts the plan, and let planning resume from `breakdown`.

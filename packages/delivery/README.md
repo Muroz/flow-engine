@@ -31,12 +31,37 @@ The flow has three gates: the plan, only when it is risky; an escalation, only w
 | `makePlan` | Generative | Writes a short plan from the task, its acceptance criteria and its ADRs. After a `revise`, it rewrites the plan from your notes. |
 | `assessRisk` | Judge | Rates the plan low, medium or high. It never rates below the risk that planning gave the task. |
 | `approvePlan` | Gate | Shows you the numbered steps and the acceptance criteria when the risk is above `delivery.autoApproveRisk`. Options: `approve`, `revise` with notes, or `reject`. |
-| `implement` | Agent | Writes the code. See [Agents](#agents). When the agent changes nothing, the flow skips checks and review and goes to the escalate gate. |
+| `implement` | Agent | Writes the code. See [Agents](#agents). When the agent changes nothing, the flow skips checks and review and goes to the escalate gate. Offline runs skip that test, since the mock agent replays a fixed diff. |
 | `runChecks` | Deterministic | Runs `delivery.checks` in the worktree, in order, and records each command's result and time. It stops at the first failure, and the failure's output becomes a note for the next attempt. |
 | `runReview` | Subgraph | Runs the review flow on the diff and the task, and maps back only the verdict, findings and report. Each finding becomes a note for the next attempt, with the reviewer's reason. |
 | `escalate` | Gate | See [When the flow gets stuck](#when-the-flow-gets-stuck). |
 | `explainWork` | Generative | Writes `walkthrough.md`, a plain-language account of the work. See [Walkthroughs](#walkthroughs). |
 | `approveMerge` | Gate | Shows the walkthrough's summary, each check's result, the review verdict and the open review comments, numbered. Options: `merge`, `fix` or `reject`. `merge` commits the worktree on `flows/<task>` and fast-forwards the base to it. See [Fixing comments before you merge](#fixing-comments-before-you-merge). |
+
+## Routing
+
+Plain code at the end of `src/nodes.ts` picks every branch. "Attempts left" means `attempts` is below `delivery.maxAttempts`. "Under budget" means the spend since the last `retry` or `fix` is below `delivery.maxCostUsd`, or the limit is 0. Each edge that isn't listed here is static.
+
+| After | Condition | Goes to | Function |
+|---|---|---|---|
+| `assessRisk` | The plan's risk is at or below `delivery.autoApproveRisk`. The scale runs `none`, `low`, `medium`, `high`, and the judge never rates `none`, so `autoApproveRisk: none` shows you every plan | `implement` | `afterRisk` |
+| `assessRisk` | Otherwise | `approvePlan` | `afterRisk` |
+| `approvePlan` | `approve` | `implement` | `afterPlanGate` |
+| `approvePlan` | `revise` | `makePlan` | `afterPlanGate` |
+| `approvePlan` | `reject` | END | `afterPlanGate` |
+| `implement` | The diff is empty, in an online run | `escalate` | `afterImplement` |
+| `implement` | Otherwise | `runChecks` | `afterImplement` |
+| `runChecks` | Every check passed | `runReview` | `afterChecks` |
+| `runChecks` | A check failed, with attempts left and under budget | `implement` | `afterChecks` |
+| `runChecks` | A check failed, otherwise | `escalate` | `afterChecks` |
+| `runReview` | `pass` | `explainWork` | `afterReview` |
+| `runReview` | `fix`, with attempts left and under budget | `implement` | `afterReview` |
+| `runReview` | `escalate`, or `fix` out of attempts or over budget | `escalate` | `afterReview` |
+| `escalate` | `retry` | `implement` | `afterEscalate` |
+| `escalate` | `accept` | `explainWork` | `afterEscalate` |
+| `escalate` | `abort` | END | `afterEscalate` |
+| `approveMerge` | `fix` | `implement` | `afterMerge` |
+| `approveMerge` | `merge` or `reject` | END | `afterMerge` |
 
 ## Rounds and what you see
 

@@ -7,10 +7,11 @@ The review flow reads a diff and returns a verdict (`pass`, `fix` or `escalate`)
 ```
 START → loadContext ─┬─► reviewer(spec)         ─┐
                      ├─► reviewer(correctness)  ─┤
-                     ├─► reviewer(security)     ─┼─► aggregate → triage → decide → writeReport → END
-                     ├─► reviewer(tests)        ─┤
+                     ├─► reviewer(security)     ─┤
+                     ├─► reviewer(tests)        ─┼─► aggregate → verify → triage → decide → writeReport → END
                      ├─► reviewer(architecture) ─┤
-                     └─► reviewer(docs)         ─┘
+                     ├─► reviewer(docs)         ─┤
+                     └─(no specialist applies)───┘
 ```
 
 | Node | Kind | What it does |
@@ -18,17 +19,32 @@ START → loadContext ─┬─► reviewer(spec)         ─┐
 | `loadContext` | Deterministic | Reads the diff, the changed files, the task, the ADRs and the conventions. |
 | `reviewer` | Generative | One specialist. `Send` runs it once per active specialist, in parallel. |
 | `aggregate` | Deterministic | Merges findings that point at the same file, within three lines, with overlapping titles. The survivor keeps the higher severity and records who else raised it. |
-| `triage` | Judge | Asks the judge, per finding, whether it is real and how severe it is. Agreement between reviewers raises confidence by 0.1 per extra reviewer. |
+| `verify` | Generative | Checks each merged finding, in parallel, before anyone acts on it. It reads what a reviewer doesn't see: the whole file, every ADR and standard, and the findings of earlier rounds. It calls each finding `valid`, `invalid` or `conflict`, and may cap its severity. A `valid` call that quotes no line or rule counts as `invalid`. When the call fails or the reply has no verdict, the finding goes on unchecked. |
+| `triage` | Judge | Rates how severe each finding is. For a finding the verifier couldn't check, it also asks whether the finding is real, and agreement between reviewers raises that confidence by 0.1 per extra reviewer. Findings the verifier ruled out skip the judge. See [Which findings are kept](#which-findings-are-kept). |
 | `decide` | Deterministic | Turns the triaged findings into a verdict, in plain code. |
 | `writeReport` | Deterministic | Writes the Markdown report, including a provenance section with every node's model and cost. |
 
+## Routing
+
+The review flow has one conditional edge. After `loadContext`, `fanOut` in `src/graph.ts` sends one `reviewer` branch per specialist that applies to this diff (see [Specialists](#specialists)). When none applies, it goes straight to `aggregate`. Every other edge is static, and the flow never loops: delivery decides what to do with the verdict.
+
+## Which findings are kept
+
+`triage` marks a finding as kept when all of these hold. Only kept findings count toward the verdict, and in delivery only they go to the agent as notes.
+
+- The verifier called it `valid`, or couldn't check it.
+- It doesn't undo a fix from an earlier round. Such a finding goes to you instead, through the first verdict rule.
+- Its confidence is at least `review.minConfidence`. A finding the verifier called `valid` always passes this test, so the setting only filters unchecked findings.
+- Its severity, after the verifier's cap and the cap in `SEVERITY_CAP`, isn't in `review.dropSeverities`.
+
 ## Verdict rules
 
-`decideVerdict` in `src/nodes.ts` checks three rules in order:
+`decideVerdict` in `src/nodes.ts` checks four rules in order:
 
-1. A finding at or above `review.escalateAtSeverity` that the judge is less sure of than `review.minConfidence` gives `escalate`. A human should look.
-2. Any kept finding rated `major` or `blocker` gives `fix`.
-3. Anything else gives `pass`, with a count of minor comments.
+1. A conflict gives `escalate`. A conflict is a finding the verifier says clashes with an ADR, a standard or an earlier round, or one the reviewer says would undo an earlier fix. Fixing either side would only bring the other back next round, so a person decides once.
+2. A finding at or above `review.escalateAtSeverity` that the judge is less sure of than `review.minConfidence` gives `escalate`. Findings the verifier ruled out never count here.
+3. Any kept finding rated `major` or `blocker` gives `fix`.
+4. Anything else gives `pass`, with a count of minor comments.
 
 `flows review` exits with code 0 on `pass` and 2 on `fix` or `escalate`.
 
@@ -88,4 +104,4 @@ console.log(state.verdict, state.report);
 
 ## Tests
 
-`test/review.test.ts` covers dedupe, the verdict rules, specialist selection and `fileDiff`. Run it with `pnpm test` from the engine root.
+`test/review.test.ts` covers dedupe, the verifier's replies, the verdict rules, specialist selection and `fileDiff`. Run it with `pnpm test` from the engine root.
