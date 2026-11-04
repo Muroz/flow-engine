@@ -187,7 +187,6 @@ For a client repo that shouldn't carry these files, keep them in a workspace fol
 
 - Gates are answered only in the terminal. Runs survive a restart, because the planning and delivery graphs save every step to `runs/checkpoints.db` and `flows resume` picks a paused run up, but you can't answer a gate from your phone or a chat. [docs/wiring.md](docs/wiring.md#4-persistent-runs-and-gates-away-from-the-terminal) describes what that needs.
 - `merge` commits the work on `flows/<task>` and fast-forwards your local base branch to it. It doesn't push or open a PR.
-- The Jev client follows the REST shape in TypeSafe's launch docs (`POST /v1/systemone`), and nobody has checked it against the live API yet. If calls fail, compare it with the current API reference. Only `JevJudge` needs to change.
 - There is no eval set yet, so you can't yet measure whether a prompt change helped.
 
 ## Roadmap
