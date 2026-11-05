@@ -2,13 +2,15 @@
 
 The `flows` command. It loads `.env` from the engine root, builds the dependencies for a run, starts a flow and asks you at each gate. The first line of each run names the judge and the model backends it calls, for example `judge llm · models claude-code`.
 
-From the engine root, run it with `pnpm flows <command>`. To run it from any folder, add an alias:
+From the engine root, run it with `pnpm flows <command>`. To run it from any folder, add an alias to `bin/flows`, a small script that runs the CLI with the engine's `tsx`:
 
 ```bash
-alias flows='pnpm --silent --dir /path/to/flow-engine flows'
+alias flows='/path/to/flow-engine/bin/flows'
 ```
 
-The CLI resolves `--repo`, `--artifacts`, `--diff-file` and `--brief` against the folder you ran the command from. pnpm passes that folder to the CLI as `INIT_CWD`.
+Don't alias `pnpm --silent … flows`: with `--silent`, pnpm turns every failing exit code into 1, so `review` can't report 2.
+
+The CLI resolves `--repo`, `--artifacts`, `--diff-file` and `--brief` against the folder you ran the command from. Under pnpm, that folder arrives as `INIT_CWD`; otherwise the CLI uses the current folder.
 
 The [root README](../../README.md#commands) lists the commands and options.
 

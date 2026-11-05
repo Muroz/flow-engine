@@ -79,10 +79,10 @@ Without `--yes`, each human gate asks you in the terminal. Every gate also offer
 2. Add a shell alias, so you can run `flows` from any project folder:
 
    ```bash
-   alias flows='pnpm --silent --dir /path/to/flow-engine flows'
+   alias flows='/path/to/flow-engine/bin/flows'
    ```
 
-   The CLI resolves relative paths against the folder you run it from, so `--repo .` works.
+   The CLI resolves relative paths against the folder you run it from, so `--repo .` works. `bin/flows` runs the CLI directly rather than through `pnpm --silent`, which would turn review's exit code 2 into 1.
 
 3. From your project folder, review your branch:
 
@@ -162,6 +162,7 @@ prompts/      one markdown prompt per generative node
 examples/     sample-project: config, ADR, tasks and a diff that is bad on purpose
 docs/         wiring guide, configuration reference and flow design guide
 scripts/      verify.sh
+bin/          flows, the wrapper the shell alias points at
 runs/         run output, git-ignored
 ```
 

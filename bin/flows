@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the flows CLI from any folder and keeps its exit code.
+# `pnpm --silent` turns every failing exit into 1, which would hide review's 2.
+engine="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$engine/node_modules/.bin/tsx" "$engine/packages/cli/src/index.ts" "$@"
