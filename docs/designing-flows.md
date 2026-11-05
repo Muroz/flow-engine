@@ -4,12 +4,12 @@ This guide is for adding a flow or changing how one works. To use the flows, sta
 
 ## Package layout
 
-Each flow package has at least these five source files. Copy the pattern when you add a flow:
+Each flow package has at least these five source files and folders. Copy the pattern when you add a flow:
 
 | File | What goes in it |
 |---|---|
 | `state.ts` | Plain TypeScript types for the state, with no framework imports. |
-| `nodes.ts` | Node functions that take state and return a partial update, plus the routing functions for conditional edges. You can test them without building a graph. |
+| `nodes/` | One file per node: a function that takes state and returns a partial update, with a JSDoc that gives its kind and the state keys it reads and writes. Helpers only one node uses live in its file, and helpers several share live in `shared.ts`. `routing.ts` holds the routing functions for conditional edges, and `index.ts` lists the nodes and re-exports them. You can test all of them without building a graph. |
 | `graph.ts` | The LangGraph `Annotation` (the state plus its reducers) and the wiring. The header comment holds the diagram. A fan-out function that needs the built dependencies, such as review's `fanOut`, can live here too. |
 | `mocks.ts` | Offline responses, keyed on each model call's `tag`, so every node and edge runs with no network. |
 | `index.ts` | What other packages may import: the state types, the nodes, the graph builder and the mock registration. |
@@ -51,7 +51,7 @@ Three LangGraph rules have already caused bugs here:
 3. **Ask judges through `deps`.** A judge node calls `deps.judge.ask(state, { name: noul(...) })`, with `noul`, `choice` or `score` from `@flows/core`. Code, not the judge, decides what the answer means.
 4. **Put prompts in `prompts/<flow>/`.** Load them with `loadPrompt("<flow>/<name>")` and fill them with `render`. Add each one to the table in [prompts/README.md](../prompts/README.md).
 5. **Build gates with `interrupt()`.** A gate node calls `interrupt(request)` with a `GateRequest` from `packages/core/src/gates.ts`: a `gate` name, a `title`, a one-screen `summary`, the `options` and, if there is more to read, a `detailPath`. The first option is what `--yes` picks. It gets back a `GateDecision` with the `decision` and any `notes`.
-6. **Log every node.** Return `log: [logEntry("<flow>.<node>", { model, costUsd, note, details })]`. The CLI prints one progress line per node from the last log entry, with its cost, and up to ten `details` below it. For lines while a node runs, such as an agent's tool calls, call `config.writer?.({ line })` with the node's second argument, as `say` in delivery's `nodes.ts` does.
+6. **Log every node.** Return `log: [logEntry("<flow>.<node>", { model, costUsd, note, details })]`. The CLI prints one progress line per node from the last log entry, with its cost, and up to ten `details` below it. For lines while a node runs, such as an agent's tool calls, call `config.writer?.({ line })` with the node's second argument, as `say` in delivery's `nodes/shared.ts` does.
 7. **Register mocks.** Export a `register<Flow>Mocks(deps)` from `mocks.ts`. When `deps.model` is a `MockModelClient`, it adds responders with `register`, keyed on your tags; when `deps.judge` is a `MockJudge`, it adds rules with `rule`. Call it in `packages/cli/src/index.ts` next to the others.
 8. **Compile with the checkpointer you're given.** Take a `checkpointer` option and pass it to `compile`. The CLI passes its SQLite saver, which `pause`, `back` and `flows resume` need. A flow without gates, such as review, can skip it.
 9. **Add a command.** In `packages/cli/src/index.ts`, build the graph and run it with `runGated`, which drives the gates in the terminal and saves the run for `resume`. A flow without gates can call `graph.invoke` instead.

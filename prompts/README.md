@@ -1,6 +1,6 @@
 # Prompts
 
-Each generative node has one Markdown prompt here, so you can read, diff and test a prompt without touching graph code. Judge questions are short enough to stay in the code: `assessBrief` and `checkCoverage` in `packages/planning/src/nodes.ts`, `assessRisk` in `packages/delivery/src/nodes.ts`, and `SEVERITY_QUESTION` and `REAL_QUESTION` in `packages/review/src/nodes.ts`. `loadPrompt("review/security")` reads `review/security.md`, and `render` fills in each `{{placeholder}}`. `render` leaves unknown placeholders in the text, so a typo shows up in the model's input instead of failing silently.
+Each generative node has one Markdown prompt here, so you can read, diff and test a prompt without touching graph code. Judge questions are short enough to stay in the code: `assessBrief` and `checkCoverage` in `packages/planning/src/nodes/`, `assessRisk` in `packages/delivery/src/nodes/assess-risk.ts`, and `SEVERITY_QUESTION` and `REAL_QUESTION` in `packages/review/src/nodes/triage.ts`. `loadPrompt("review/security")` reads `review/security.md`, and `render` fills in each `{{placeholder}}`. `render` leaves unknown placeholders in the text, so a typo shows up in the model's input instead of failing silently.
 
 | File | Node | Placeholders |
 |---|---|---|
@@ -29,6 +29,6 @@ Each generative node has one Markdown prompt here, so you can read, diff and tes
 
 Every prompt except `delivery/walkthrough.md` asks for a single JSON object, and the node parses it with `parseJsonReply`. If you change the JSON shape in a prompt, change the parsing in the node too. The walkthrough prompt asks for Markdown, and the merge gate shows its `## In short` and `## How it works` sections, so keep both headings.
 
-The Claude Code agent's prompt isn't here. `agentPrompt` in `packages/delivery/src/nodes.ts` builds it from the task, because it is mostly data.
+The Claude Code agent's prompt isn't here. `agentPrompt` in `packages/delivery/src/nodes/implement.ts` builds it from the task, because it is mostly data.
 
 Before you tune a review prompt, build an eval set of real diffs with known issues. Without one, you can't tell whether a change helped.

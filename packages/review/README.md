@@ -51,7 +51,7 @@ The review flow has one conditional edge. After `loadContext`, `fanOut` in `src/
 
 ## Verdict rules
 
-`decideVerdict` in `src/nodes.ts` checks four rules in order:
+`decideVerdict` in `src/nodes/decide.ts` checks four rules in order:
 
 1. A conflict gives `escalate`. A conflict is a finding the verifier says clashes with an ADR, a standard or an earlier round, or one the reviewer says would undo an earlier fix. Fixing either side would only bring the other back next round, so a person decides once.
 2. A finding at or above `review.escalateAtSeverity` that the judge is less sure of than `review.minConfidence` gives `escalate`. Findings the verifier ruled out never count here.
@@ -87,14 +87,14 @@ standards:
 
 ## Severity
 
-Reviewers and the triage judge use the same scale. `prompts/review/_output.md` defines it for the reviewers, and `SEVERITY_QUESTION` in `src/nodes.ts` for the judge:
+Reviewers and the triage judge use the same scale. `prompts/review/_output.md` defines it for the reviewers, and `SEVERITY_QUESTION` in `src/nodes/triage.ts` for the judge:
 
 - **blocker:** a security hole in code that runs, data loss, or a broken build.
 - **major:** a bug in code that runs, a missed acceptance criterion, or a broken ADR or project standard.
 - **minor:** hardening beyond what the task asks, unusual ways around a rule, or unclear docs.
 - **nit:** taste.
 
-Anything that neither the task nor an ADR nor a standard asks for is minor at most. So are requests to build something a later task will build. Docs findings are capped at minor in code, by `SEVERITY_CAP` in `src/nodes.ts`, whatever the judge says. The judge sees the task's title and acceptance criteria, so it can tell.
+Anything that neither the task nor an ADR nor a standard asks for is minor at most. So are requests to build something a later task will build. Docs findings are capped at minor in code, by `SEVERITY_CAP` in `src/nodes/triage.ts`, whatever the judge says. The judge sees the task's title and acceptance criteria, so it can tell.
 
 To add a specialist:
 

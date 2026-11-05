@@ -53,7 +53,7 @@ The flow has three gates: the plan, only when it is risky; an escalation, only w
 
 ## Routing
 
-Plain code at the end of `src/nodes.ts` picks every branch. "Attempts left" means `attempts` is below `delivery.maxAttempts`. "Under budget" means the spend since the last `retry` or `fix` is below `delivery.maxCostUsd`, or the limit is 0. Each edge that isn't listed here is static.
+Plain code in `src/nodes/routing.ts` picks every branch. "Attempts left" means `attempts` is below `delivery.maxAttempts`. "Under budget" means the spend since the last `retry` or `fix` is below `delivery.maxCostUsd`, or the limit is 0. Each edge that isn't listed here is static.
 
 | After | Condition | Goes to | Function |
 |---|---|---|---|
@@ -160,7 +160,7 @@ Your notes pick what goes back:
 
 - **`claude-code`** runs Claude Code headless in a git worktree on branch `flows/<task>`. The code is in `src/agents/claude-code.ts`, and [docs/wiring.md](../../docs/wiring.md#3-coding-agent) explains how to turn it on.
 
-With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The prompt also lists the project's `standards` files and tells the agent to read them first. In a follow-up round, it tells the agent to fix only those notes and leave the rest alone. `agentPrompt` in `src/nodes.ts` builds the prompt.
+With `claude-code`, each attempt's prompt holds the task, the plan, the ADR decisions, the conventions and the notes from the last failed checks or review. The prompt also lists the project's `standards` files and tells the agent to read them first. In a follow-up round, it tells the agent to fix only those notes and leave the rest alone. `agentPrompt` in `src/nodes/implement.ts` builds the prompt.
 
 Files git doesn't track, such as `.env`, don't reach a new worktree. List them under `delivery.copyToWorktree`, and delivery copies them in so the checks can use them. The agent may use `Read`, `Edit`, `Write`, `Glob` and `Grep`, and may run exactly your check commands in Bash. A `claude-code/<model>` value in `models.implementer` picks its model. Otherwise it uses `claudeCode.model`, which defaults to `opus`. If the agent exits with an error, the flow logs it and carries on, and checks and review decide what happens next.
 

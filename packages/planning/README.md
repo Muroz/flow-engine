@@ -63,7 +63,7 @@ The model call and the gate always sit in separate nodes. When LangGraph resumes
 
 ## Routing
 
-Plain code in `src/nodes.ts` picks every branch. Each edge that isn't listed here is static.
+Plain code in `src/nodes/routing.ts` picks every branch. Each edge that isn't listed here is static.
 
 | After | Condition | Goes to | Function |
 |---|---|---|---|
