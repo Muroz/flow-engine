@@ -4,7 +4,7 @@ The review flow reads a diff and returns a verdict (`pass`, `fix` or `escalate`)
 
 ## How a review works
 
-1. **Gather context.** It reads the diff, the task and its acceptance criteria when you pass `--task`, the project's ADRs (architecture decision records), its conventions and its standards files.
+1. **Gather context.** It reads the diff, the task and its acceptance criteria when you pass `--task`, the project's ADRs, its conventions and its standards files.
 2. **Specialists review.** Up to six reviewer models read the diff in parallel, each from one angle: does it meet the task (`spec`), is it correct, is it secure, is it tested, does it follow the architecture, and are its docs clear. Each sees only the context its job needs, and each returns findings: a problem, where it is, how severe it is and why.
 3. **Merge duplicates.** Findings from different reviewers about the same lines become one finding.
 4. **Verify.** Another model checks each finding against the whole file, the ADRs, the standards and what earlier rounds asked for. It throws out findings it can show are wrong, and flags ones that would break a rule or undo an earlier fix.
@@ -73,6 +73,13 @@ Each specialist sees only its own view of the context. That keeps prompts short 
 | `architecture` | ADR decisions, conventions, diff | The project has ADRs, conventions or standards listed for it. |
 | `docs` | Writing rules for developers, doc files, and the code hunks that add comments | The diff changes a Markdown or text file, or adds a comment line. |
 
+To add a specialist:
+
+1. Add an entry to `REVIEWERS` in `src/reviewers.ts`, with its `view` and, if it needs one, `appliesTo`.
+2. Add `prompts/review/<id>.md`. End it with `{{output_format}}` so it returns the shared JSON shape.
+3. List the ID under `review.reviewers` in the project's `.flows.yaml`.
+4. Add an offline heuristic in `src/mocks.ts` if you want it to find something in offline runs.
+
 ## Project standards
 
 `standards` in `.flows.yaml` lists the project's own rules files, such as a module layout or a testing standard, and the reviewers that check against each one:
@@ -95,13 +102,6 @@ Reviewers and the triage judge use the same scale. `prompts/review/_output.md` d
 - **nit:** taste.
 
 Anything that neither the task nor an ADR nor a standard asks for is minor at most. So are requests to build something a later task will build. Docs findings are capped at minor in code, by `SEVERITY_CAP` in `src/nodes/triage.ts`, whatever the judge says. The judge sees the task's title and acceptance criteria, so it can tell.
-
-To add a specialist:
-
-1. Add an entry to `REVIEWERS` in `src/reviewers.ts`, with its `view` and, if it needs one, `appliesTo`.
-2. Add `prompts/review/<id>.md`. End it with `{{output_format}}` so it returns the shared JSON shape.
-3. List the ID under `review.reviewers` in the project's `.flows.yaml`.
-4. Add an offline heuristic in `src/mocks.ts` if you want it to find something in offline runs.
 
 ## Use it from code
 

@@ -4,16 +4,14 @@ The delivery flow takes one planned task from plan to merge gate. It writes a pl
 
 ## How a task moves through it
 
-1. **Plan.** A model reads the task from `plan/tasks.yaml`, its acceptance criteria and the ADRs (architecture decision records) it links to, and writes a short numbered plan.
+1. **Plan.** A model reads the task from `plan/tasks.yaml`, its acceptance criteria and the ADRs it links to, and writes a short numbered plan.
 2. **Risk.** A judge rates how risky it is to carry out the plan without a person reading it first, looking for things such as data migrations, auth, payments and public API changes. It never rates lower than the risk the planning flow gave the task. A plan above `delivery.autoApproveRisk`, `low` by default, waits for you to approve it.
-3. **Implement.** A coding agent writes the code in its own git worktree, a separate checkout on branch `flows/<task>`, so your own checkout never changes. See [Agents](#agents).
+3. **Implement.** A coding agent writes the code in its own git worktree on branch `flows/<task>`, so your checkout never changes. See [Agents](#agents).
 4. **Checks.** Your own commands, such as tests, lint and a build, run against the agent's code. A failure goes back to the agent as a note, and the flow returns to step 3. See [Checks](#checks).
 5. **Review.** Once the checks pass, the [review flow](../review/README.md) reads the change. If it asks for fixes, they go back to the agent as notes, and the flow returns to step 3.
 6. **Stop rule.** After `delivery.maxAttempts` attempts, 3 by default, or `delivery.maxCostUsd` of model spend, the flow stops and asks you what to do. It also asks when the review wants a person to decide, or when the agent changed nothing. See [When the flow gets stuck](#when-the-flow-gets-stuck).
 7. **Walkthrough.** A model writes a plain-language account of the work for someone who hasn't read the code. See [Walkthroughs](#walkthroughs).
 8. **Merge gate.** You see the walkthrough, the checks and the review, then choose `merge`, `fix` or `reject`.
-
-You see the plan only when it is risky, the escalate gate only when the flow is stuck, and the merge gate every time.
 
 ## Graph
 
@@ -105,7 +103,7 @@ After each attempt, `runChecks` does this:
 - **On failure:** the last 2,000 characters of the failed command's output become a note for the agent's next attempt, and the round counts toward `delivery.maxAttempts`. The review doesn't run, so no model money goes on code that fails its own checks.
 - **On success:** the review runs.
 
-The CLI prints one line per command, such as `✓ pnpm lint (4.1s)`, `✗ pnpm test (3.2s)` or `· pnpm build (not run)`. When the flow runs out of attempts, the escalate gate shows the failed command and the last six lines of its output. The merge gate shows each check's result.
+When the flow runs out of attempts, the escalate gate shows the failed command and the last six lines of its output. The merge gate shows each check's result.
 
 The Claude Code agent may run exactly these commands in Bash, and nothing else, so it can run the tests itself before it finishes. `delivery.agentTools` widens that list.
 
@@ -117,7 +115,7 @@ Each failed check or kept review finding becomes a note for the next attempt. In
 
 ## Cost
 
-Each review round calls six specialists, so the review is most of a run's model cost. Three settings keep it down:
+Each review round calls up to six specialists, so the review is most of a run's model cost. Three things keep it down:
 
 - **Generated files stay out.** Review and walkthroughs skip lockfiles, build output, source maps and snapshots. `DEFAULT_REVIEW_IGNORE` in `packages/core/src/config.ts` lists them, and `review.ignore` adds your own patterns. The review's first progress line names the files it skipped.
 - **The docs reviewer reads less.** It sees doc files in full, but only the code hunks that add a comment.
@@ -169,7 +167,7 @@ Files git doesn't track, such as `.env`, don't reach a new worktree. List them u
 Before the merge gate, `explainWork` explains the work for someone who hasn't read the code. It uses the `planner` model and the prompt in `prompts/delivery/walkthrough.md`. Each walkthrough has five sections:
 
 1. **In short:** what you can do now that you couldn't before.
-2. **How it works:** the steps in order, with every term explained. When parts talk to each other, it adds a diagram written in [Mermaid](https://mermaid.js.org), a text format that GitHub and most Markdown viewers draw as a picture.
+2. **How it works:** the steps in order, with every term explained. When parts talk to each other, it adds a [Mermaid](https://mermaid.js.org) diagram.
 3. **What changed:** a table of files and their jobs.
 4. **How to try it:** steps you can follow to see it working.
 5. **Worth knowing:** shortcuts, limits, unfixed review findings and follow-up work.
