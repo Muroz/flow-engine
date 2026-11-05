@@ -289,7 +289,7 @@ export const triage =
 
         const judgeState = {
           finding: f,
-          code: fileDiff(state.input.diff, f.file),
+          code: findingDiff(state.input.diff, f.file, f.line),
           task: state.input.task ? { title: state.input.task.title, acceptanceCriteria: state.input.task.acceptanceCriteria } : undefined,
         };
         const severity = score(SEVERITY_QUESTION, SEVERITIES);
@@ -327,6 +327,43 @@ export const SEVERITY_CAP: Record<string, Severity> = { docs: "minor" };
 
 export function capSeverity(reviewer: string, severity: Severity): Severity {
   return capAt(severity, SEVERITY_CAP[reviewer]);
+}
+
+/**
+ * The diff lines within `radius` lines of the finding, under the file's
+ * headers. Reviewers' line numbers drift by a line or two, so 5 leaves room. Rating severity needs the problem, not its neighbours: given the
+ * whole file, the judge rated a missing test as a blocker because a leaked
+ * secret sat a few lines away. Without a line, or when the line isn't in
+ * the diff, it falls back to the whole file's diff.
+ */
+export function findingDiff(diff: string, file: string | undefined, line: number | undefined, radius = 5): string {
+  const whole = fileDiff(diff, file);
+  if (!file || !line) return whole;
+  const out: string[] = [];
+  let next = 0; // the new-file line number of the next added or context line
+  let inHunk = false;
+  let kept = 0;
+  for (const text of whole.split("\n")) {
+    const hunk = text.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      next = Number(hunk[1]);
+      inHunk = true;
+      out.push(text);
+      continue;
+    }
+    if (!inHunk) {
+      out.push(text); // file headers
+      continue;
+    }
+    // A removed line sits where the next new line would go.
+    const at = next;
+    if (!text.startsWith("-") && !text.startsWith("\\")) next++;
+    if (Math.abs(at - line) <= radius) {
+      out.push(text);
+      kept++;
+    }
+  }
+  return kept ? out.join("\n") : whole;
 }
 
 /** Just the part of the diff for one file — the judge doesn't need the rest. */

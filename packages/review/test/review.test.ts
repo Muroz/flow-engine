@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Finding, TriagedFinding } from "@flows/core";
-import { decideVerdict, dedupeFindings, fileDiff } from "../src/nodes";
+import { decideVerdict, dedupeFindings, fileDiff, findingDiff } from "../src/nodes";
 import { activeReviewers } from "../src/reviewers";
 
 const f = (over: Partial<Finding>): Finding => ({
@@ -240,4 +240,29 @@ test("later rounds get earlier findings and what changed; a first round gets not
   const out = laterRound({ ...base, prior, delta: "+changed" }, tpl);
   assert.match(out, /round 3, sent: \[minor\] Remove committed passwords, from security/);
   assert.match(out, /\+changed/);
+});
+
+test("findingDiff gives the judge only the lines near the finding", () => {
+  const body = Array.from({ length: 60 }, (_, i) => `+line ${i + 1}`).join("\n");
+  const diff = `diff --git a/x.ts b/x.ts\nnew file mode 100644\n--- /dev/null\n+++ b/x.ts\n@@ -0,0 +1,60 @@\n${body}\n`;
+  const near = findingDiff(diff, "x.ts", 40, 5);
+  assert.match(near, /^\+\+\+ b\/x\.ts$/m);
+  assert.match(near, /^\+line 35$/m);
+  assert.match(near, /^\+line 45$/m);
+  assert.doesNotMatch(near, /^\+line 34$/m);
+  assert.doesNotMatch(near, /^\+line 46$/m);
+});
+
+test("findingDiff counts removed lines at their place in the new file", () => {
+  const diff = "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -10,4 +10,4 @@\n keep 10\n-old 11\n+new 11\n keep 12\n keep 13\n";
+  const near = findingDiff(diff, "x.ts", 11, 0);
+  assert.match(near, /^-old 11$/m);
+  assert.match(near, /^\+new 11$/m);
+  assert.doesNotMatch(near, /keep 12/);
+});
+
+test("findingDiff falls back to the whole file's diff without a line, or when the line isn't in the diff", () => {
+  const diff = "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1,1 +1,1 @@\n-a\n+b\n";
+  assert.equal(findingDiff(diff, "x.ts", undefined), fileDiff(diff, "x.ts"));
+  assert.equal(findingDiff(diff, "x.ts", 500), fileDiff(diff, "x.ts"));
 });
