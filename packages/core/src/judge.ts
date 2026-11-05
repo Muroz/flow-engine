@@ -32,7 +32,12 @@ export type ScoreQ<L extends string = string> = {
 export type JudgeQuestion = NoulQ | ChoiceQ | ScoreQ;
 
 export type NoulA = { p: number };
-export type ChoiceA<O extends string = string> = { choice: O; confidence: number };
+export type ChoiceA<O extends string = string> = {
+  choice: O;
+  confidence: number;
+  /** Each option's probability, when the engine reports them. Jev does, at no extra cost; the LLM judge doesn't. */
+  probabilities?: Partial<Record<O, number>>;
+};
 export type ScoreA<L extends string = string> = { level: L; index: number; confidence: number };
 
 export type AnswerFor<Q> = Q extends ChoiceQ<infer O>
@@ -103,7 +108,7 @@ export class JevJudge implements Judge {
       if (q.type === "noul") {
         out[key] = { p: Number(a.noul ?? 0) };
       } else if (q.type === "choice") {
-        out[key] = { choice: a.choice, confidence: Number(a.confidence ?? a.probabilities?.[a.choice] ?? 0) };
+        out[key] = { choice: a.choice, confidence: Number(a.confidence ?? a.probabilities?.[a.choice] ?? 0), probabilities: jevProbabilities(a.probabilities) };
       } else {
         const index = jevScoreIndex(a, q.levels);
         out[key] = { level: q.levels[index], index, confidence: Number(a.confidence ?? 0) };
@@ -111,6 +116,13 @@ export class JevJudge implements Judge {
     }
     return out as Answers<Q>;
   }
+}
+
+/** Jev's per-option probabilities, keeping only numbers; undefined when it sent none. */
+export function jevProbabilities(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out = Object.fromEntries(Object.entries(raw).filter(([, p]) => typeof p === "number" && Number.isFinite(p))) as Record<string, number>;
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**

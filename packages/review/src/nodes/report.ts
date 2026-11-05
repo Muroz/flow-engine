@@ -19,7 +19,7 @@ export const report = async (state: ReviewState): Promise<ReviewUpdate> => {
 
   const rows = kept.map(
     (f) =>
-      `| ${f.judgedSeverity} | ${f.title} | ${f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "—"} | ${[f.reviewer, ...(f.alsoRaisedBy ?? [])].join(", ")} | ${f.confidence.toFixed(2)} |`,
+      `| ${f.judgedSeverity}${f.category ? ` (${f.category})` : ""} | ${f.title} | ${f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "—"} | ${[f.reviewer, ...(f.alsoRaisedBy ?? [])].join(", ")} | ${f.confidence.toFixed(2)} |`,
   );
 
   const conflicts = findings.filter(isConflict);

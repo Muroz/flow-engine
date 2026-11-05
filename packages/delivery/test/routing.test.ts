@@ -127,3 +127,11 @@ test("a follow-up round tells the agent how to decline a note", async () => {
   assert.match(agentPrompt(s({ task, fixNotes: ["[major] X"] }), cfg), /Declined: <note title> — <reason>/);
   assert.doesNotMatch(agentPrompt(s({ task }), cfg), /Declined:/);
 });
+
+test("a finding note carries the verifier's fix when the reviewer's own would break a rule", async () => {
+  const { findingNote } = await import("../src/nodes");
+  const base = { reviewer: "correctness", title: "Move SQL out of the route", file: "src/a.ts", line: 3, severity: "major" as const, rationale: "The route runs SQL. It owns a pool.", judgedSeverity: "major" as const, confidence: 1, kept: true };
+  assert.equal(findingNote(base), "[major] Move SQL out of the route (src/a.ts:3): The route runs SQL.");
+  const fixed = { ...base, verification: { verdict: "valid" as const, evidence: "line 3", fix: "Put the query in src/db/repository.ts.", checked: true } };
+  assert.equal(findingNote(fixed), "[major] Move SQL out of the route (src/a.ts:3): The route runs SQL. Fix: Put the query in src/db/repository.ts.");
+});

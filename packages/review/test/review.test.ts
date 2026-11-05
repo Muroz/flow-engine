@@ -140,13 +140,72 @@ test("verifier replies: a valid finding needs evidence, and an unreadable reply 
   const conflict = parseVerification('{"verdict":"conflict","evidence":"ADR-0007 puts it in src/db","conflictsWith":"ADR-0007","maxSeverity":"minor"}');
   assert.equal(conflict.conflictsWith, "ADR-0007");
   assert.equal(conflict.maxSeverity, "minor");
+  assert.equal(parseVerification('{"verdict":"valid","evidence":"line 3","fix":"Put the query in src/db/repository.ts"}').fix, "Put the query in src/db/repository.ts");
+  assert.equal(parseVerification('{"verdict":"invalid","evidence":"handled","fix":"x"}').fix, undefined, "only a valid finding keeps a fix");
 });
 
-test("verdict: a conflict escalates, even alongside findings to fix", () => {
-  const conflict = t({ kept: false, confidence: 0, verification: { verdict: "conflict", evidence: "", conflictsWith: "ADR-0007", checked: true } });
-  const v = decideVerdict([t({}), conflict], policy);
+test("triage: the judge names the kind of problem, code sets the severity, and the judge never sees other opinions", async () => {
+  const { MockJudge } = await import("@flows/core");
+  const { triage } = await import("../src/nodes");
+  const seen: any[] = [];
+  const kinds: Record<string, string> = {
+    "Make the to date inclusive": "bug",
+    "Leaked key": "security",
+    "Add tests": "missingTests",
+    Rename: "taste",
+    Odd: "invented",
+    "Log the request id": "other",
+    "Personal data in logs": "pii",
+  };
+  let options: string[] = [];
+  const judge = new MockJudge().rule((key, q: any, state: any) => {
+    if (key !== "category") return undefined;
+    options = Object.keys(q.options);
+    seen.push(state);
+    return { choice: kinds[state.finding.title], confidence: state.finding.title === "Rename" ? 0.3 : 0.9 };
+  });
+  const { parseCategories } = await import("@flows/core");
+  const categories = parseCategories({ missingTests: "minor", pii: { description: "personal data in logs", severity: "blocker" } });
+  const deps = { offline: true, config: { review: { minConfidence: 0.6, dropSeverities: ["nit"], categories } }, judge } as any;
+  const verified = Object.keys(kinds).map((title) => ({
+    ...f({ title, severity: "blocker" }),
+    alsoRaisedBy: [],
+    verification: { verdict: "valid" as const, evidence: "This should be treated as a blocker.", checked: true },
+  }));
+  const out = await triage(deps)({ input: { diff: "", label: "t" }, verified, rawFindings: [], log: [] } as any);
+  const by = Object.fromEntries(out.findings!.map((x) => [x.title, x]));
+  assert.equal(by["Make the to date inclusive"]!.judgedSeverity, "major", "a bug is major, whatever the reviewer said");
+  assert.equal(by["Leaked key"]!.judgedSeverity, "blocker");
+  assert.equal(by["Add tests"]!.judgedSeverity, "minor", "the project lowered missingTests");
+  assert.equal(by["Personal data in logs"]!.judgedSeverity, "blocker", "a kind the project added");
+  assert.equal(by["Rename"]!.kept, false, "taste is a nit, and nits drop");
+  assert.equal(by["Log the request id"]!.judgedSeverity, "major", "no kind fits: the reviewer's blocker, capped at major");
+  assert.equal(by["Odd"]!.category, "other", "a kind the judge made up counts as no fit");
+  assert.match(out.log![0]!.note!, /3 didn't fit the table/, "other, a made-up kind and a low-confidence pick");
+  assert.ok(options.includes("pii") && options.at(-1) === "other", "the judge chooses from the project's table, with other last");
+  for (const s of seen) {
+    assert.deepEqual(Object.keys(s.finding).sort(), ["file", "line", "rationale", "title"]);
+    assert.doesNotMatch(JSON.stringify(s), /treated as a blocker/);
+  }
+});
+
+const ruleConflict = (over: Partial<TriagedFinding>, conflictsWith = "ADR-0007") =>
+  t({ kept: false, confidence: 0, verification: { verdict: "conflict", evidence: "", conflictsWith, checked: true }, ...over });
+
+test("verdict: a serious conflict with a rule escalates, even alongside findings to fix", () => {
+  const v = decideVerdict([t({}), ruleConflict({ judgedSeverity: "blocker" })], policy);
   assert.equal(v.verdict, "escalate");
   assert.match(v.reason, /reviewers disagree: .* vs ADR-0007/);
+});
+
+test("verdict: a conflict with a rule below escalateAtSeverity doesn't hold up the fixes", () => {
+  assert.equal(decideVerdict([t({}), ruleConflict({ judgedSeverity: "minor" })], policy).verdict, "fix");
+  assert.equal(decideVerdict([ruleConflict({ judgedSeverity: "major" })], policy).verdict, "pass");
+});
+
+test("verdict: a conflict with an earlier round escalates at any severity", () => {
+  const v = decideVerdict([t({}), ruleConflict({ judgedSeverity: "minor" }, "round 2: Remove the empty catch")], policy);
+  assert.equal(v.verdict, "escalate");
 });
 
 test("verdict: a finding that would undo an earlier round escalates", () => {
@@ -176,7 +235,7 @@ test("verify and triage: invalid findings drop, conflicts stay out of the fix li
     return title ? JSON.stringify(replies[title]) : undefined;
   });
   const judge = new MockJudge().rule((key, _q, state: any) =>
-    key === "severity" ? { level: state.finding.severity, index: 0, confidence: 0.9 } : undefined,
+    key === "category" ? { choice: state.finding.title === "Clarify the password note" ? "docs" : "brokenRule", confidence: 0.9 } : undefined,
   );
   const deps = {
     config: { models: { default: "m" }, review: { minConfidence: 0.6, dropSeverities: ["nit"], escalateAtSeverity: "blocker" } },
@@ -265,4 +324,32 @@ test("findingDiff falls back to the whole file's diff without a line, or when th
   const diff = "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1,1 +1,1 @@\n-a\n+b\n";
   assert.equal(findingDiff(diff, "x.ts", undefined), fileDiff(diff, "x.ts"));
   assert.equal(findingDiff(diff, "x.ts", 500), fileDiff(diff, "x.ts"));
+});
+
+test("severity certainty: kinds that share a severity add up, and without probabilities the kind's confidence stands", async () => {
+  const { severityCertainty } = await import("../src/nodes");
+  const { DEFAULT_CATEGORIES } = await import("@flows/core");
+  // A live Jev answer: split between two major kinds, so a sure major.
+  const split = { confidence: 0.39, probabilities: { bug: 0.46, security: 0, missedCriterion: 0.49, brokenRule: 0.05, other: 0 } };
+  assert.equal(severityCertainty("missedCriterion", split, DEFAULT_CATEGORIES).toFixed(2), "1.00");
+  // Split between a major and a blocker: unsure of the severity.
+  const torn = { confidence: 0.5, probabilities: { bug: 0.45, security: 0.55 } };
+  assert.equal(severityCertainty("security", torn, DEFAULT_CATEGORIES), 0.55);
+  assert.equal(severityCertainty("other", { confidence: 0.6, probabilities: { other: 0.6, bug: 0.4 } }, DEFAULT_CATEGORIES), 0.6);
+  assert.equal(severityCertainty("bug", { confidence: 0.3 }, DEFAULT_CATEGORIES), 0.3, "the LLM judge sends no probabilities");
+});
+
+test("triage logs a finding torn between severities, not one split between kinds of the same severity", async () => {
+  const { MockJudge } = await import("@flows/core");
+  const { triage } = await import("../src/nodes");
+  const answers: Record<string, object> = {
+    "Same severity": { choice: "missedCriterion", confidence: 0.39, probabilities: { bug: 0.46, missedCriterion: 0.49, brokenRule: 0.05 } },
+    Torn: { choice: "security", confidence: 0.4, probabilities: { security: 0.4, bug: 0.35, taste: 0.25 } },
+  };
+  const judge = new MockJudge().rule((key, _q, state: any) => (key === "category" ? answers[state.finding.title] : undefined));
+  const deps = { offline: true, config: { review: { minConfidence: 0.6, dropSeverities: ["nit"] } }, judge } as any;
+  const verified = Object.keys(answers).map((title) => ({ ...f({ title }), alsoRaisedBy: [], verification: { verdict: "valid" as const, evidence: "x", checked: true } }));
+  const out = await triage(deps)({ input: { diff: "", label: "t" }, verified, rawFindings: [], log: [] } as any);
+  assert.match(out.log![0]!.note!, /1 didn't fit the table/);
+  assert.deepEqual(out.log![0]!.details, ["no good fit (security, 0.40): Torn"]);
 });

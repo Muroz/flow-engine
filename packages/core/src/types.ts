@@ -44,8 +44,10 @@ export type Finding = {
 export type Verification = {
   verdict: "valid" | "invalid" | "conflict";
   evidence: string;
-  /** For a conflict: the ADR, standard, criterion or earlier request the fix would break. */
+  /** For a conflict: the ADR, standard, criterion or earlier request any fix would break. */
   conflictsWith?: string;
+  /** For a valid finding whose own suggestion would break a rule: a fix that keeps to the rules. */
+  fix?: string;
   /** The highest severity an ADR or standard allows for this kind of finding. */
   maxSeverity?: Severity;
   /** False when the verifier gave no usable answer and the finding went through unchecked. */
@@ -55,6 +57,8 @@ export type Verification = {
 /** A finding after the judge has scored it. */
 export type TriagedFinding = Finding & {
   judgedSeverity: Severity;
+  /** The kind of problem the judge said this is, which sets `judgedSeverity`. */
+  category?: string;
   confidence: number; // 0..1 — how sure the judge is this is a real problem
   kept: boolean; // false = filtered as noise
   alsoRaisedBy?: string[]; // other reviewers that flagged the same thing

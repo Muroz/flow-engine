@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./config";
+export * from "./categories";
 export * from "./models";
 export * from "./judge";
 export * from "./artifacts";

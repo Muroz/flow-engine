@@ -6,6 +6,7 @@ Core holds everything the flows share. It has no LangGraph code, so every flow c
 |---|---|
 | `types.ts` | The contracts between flows: `PlannedTask`, `Finding`, `Verification`, `TriagedFinding`, `PriorFinding`, `Verdict` and `LogEntry`. `PriorFinding` is how delivery passes earlier rounds' findings back into review. |
 | `config.ts` | `loadConfig`, which reads `.flows.yaml` and fills in defaults, and `modelFor`, which picks the model for a role. [docs/configuration.md](../../docs/configuration.md) lists every setting. |
+| `categories.ts` | The triage table review uses to set a finding's severity from its kind. `DEFAULT_CATEGORIES` is the built-in table, and `parseCategories` merges a project's `review.categories` over it and rejects bad entries. `categoryWarnings` warns when the table grows past `CATEGORY_WARN_AT` kinds, and `appendTriageGaps` writes `runs/<project>/triage-gaps.md`. See [Severity](../review/README.md#severity). |
 | `deps.ts` | `createDeps`, which builds the model client and judge once per run and checks that every role it will call has a backend. Nodes get them through `FlowDeps` and never read environment variables or build clients themselves. With `--claude-code`, `withClaudeCodeModels` moves every role to Claude Code. `assertClaudeCodeAllowed` refuses Claude Code on a project whose `openrouter.provider.only` leaves out `anthropic`; see [docs/configuration.md](../../docs/configuration.md#models). |
 | `models.ts` | `OpenRouterClient`, `ClaudeCodeClient`, `RoutingModelClient`, `MockModelClient` and `parseJsonReply`. |
 | `judge.ts` | The judge interface and its three engines: `JevJudge`, `LlmJudge` and `MockJudge`. |
@@ -20,22 +21,22 @@ Core holds everything the flows share. It has no LangGraph code, so every flow c
 A judge answers small typed questions about one piece of state. It never writes prose, so code, not a model, decides what happens with the answer.
 
 ```ts
-import { noul, score, SEVERITIES } from "@flows/core";
+import { choice, noul } from "@flows/core";
 
 const a = await deps.judge.ask(
   { finding, code },
   {
     real: noul("Is this a real problem introduced by this change?"),
-    severity: score("How severe is it if merged as-is?", SEVERITIES),
+    kind: choice("Which kind of problem is this?", { bug: "a bug in code that runs", security: "a security hole" }),
   },
 );
-// a.real.p is a probability; a.severity.level is one of SEVERITIES.
+// a.real.p is a probability; a.kind.choice is "bug" or "security".
 ```
 
 There are three question types:
 
 - `noul(instructions)` asks yes or no and returns `{ p }`, the probability of yes.
-- `choice(instructions, options)` picks one option and returns `{ choice, confidence }`.
+- `choice(instructions, options)` picks one option and returns `{ choice, confidence, probabilities }`. Jev gives a probability for every option in the same answer, at no extra cost. The LLM judge leaves `probabilities` out.
 - `score(instructions, levels)` places the state on an ordered scale and returns `{ level, index, confidence }`.
 
 `judgeEngine` in `deps.ts` picks the engine. `jev` and `llm` are explicit. `auto` picks Jev when `TYPESAFE_API_KEY` is set and the project has no `openrouter.provider.only` list, because Jev calls go straight to TypeSafe and that list can't restrict them. See [docs/configuration.md](../../docs/configuration.md#openrouter-and-judge).

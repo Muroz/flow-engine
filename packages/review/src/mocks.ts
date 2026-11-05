@@ -3,7 +3,7 @@
  * the specialist models and the judge, so `--offline` exercises every node
  * and edge with no keys and no network. Not a real reviewer — a test double.
  */
-import { MockJudge, MockModelClient, SEVERITIES, type FlowDeps, type Severity } from "@flows/core";
+import { MockJudge, MockModelClient, type FlowDeps, type Severity } from "@flows/core";
 
 type Hit = { title: string; file?: string; line?: number; severity: Severity; rationale: string; suggestion?: string };
 
@@ -75,8 +75,18 @@ const HEURISTICS: Record<string, (diff: string, user: string) => Hit[]> = {
   },
 };
 
-// How sure the fake judge is, by the reviewer's own severity.
-const MOCK_CONFIDENCE: Record<Severity, number> = { nit: 0.45, minor: 0.7, major: 0.85, blocker: 0.92 };
+// The kind of problem each heuristic finding is, by its title, for the fake judge.
+const MOCK_CATEGORY: [RegExp, string][] = [
+  [/^Hard-coded secret|^SQL built/, "security"],
+  [/^Dynamic code execution|^Error swallowed/, "bug"],
+  [/^Loose equality/, "taste"],
+  [/^No tests/, "missingTests"],
+  [/^Bypasses the repository/, "brokenRule"],
+  [/^Acceptance criterion/, "missedCriterion"],
+];
+
+// How sure the fake judge is that a finding is real, by its kind.
+const MOCK_CONFIDENCE: Record<string, number> = { taste: 0.45, missedCriterion: 0.7 };
 
 export function registerReviewMocks(deps: FlowDeps): void {
   if (deps.model instanceof MockModelClient) {
@@ -96,10 +106,11 @@ export function registerReviewMocks(deps: FlowDeps): void {
   }
   if (deps.judge instanceof MockJudge) {
     deps.judge.rule((key, _q, state: any) => {
-      const sev: Severity | undefined = state?.finding?.severity;
-      if (!sev) return undefined;
-      if (key === "real") return { p: MOCK_CONFIDENCE[sev] };
-      if (key === "severity") return { level: sev, index: SEVERITIES.indexOf(sev), confidence: 0.8 };
+      const title: string | undefined = state?.finding?.title;
+      if (!title) return undefined;
+      const kind = MOCK_CATEGORY.find(([re]) => re.test(title))?.[1] ?? "bug";
+      if (key === "real") return { p: MOCK_CONFIDENCE[kind] ?? 0.85 };
+      if (key === "category") return { choice: kind, confidence: 0.8 };
       return undefined;
     });
   }

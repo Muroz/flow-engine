@@ -4,7 +4,7 @@ Reply with a single JSON object and nothing else:
 
 Severity guide:
 - blocker: must not merge. A security hole in code that runs, data loss, or a broken build or failing check.
-- major: a bug in code that runs, a missed acceptance criterion, or a broken ADR or project standard.
+- major: a bug in code that runs, a missed acceptance criterion, a broken ADR or project standard, or no tests for behaviour the change adds.
 - minor: worth fixing but not blocking. Hardening beyond what the task asks, unusual ways around a rule, unclear docs.
 - nit: taste.
 If neither the task nor an ADR nor a project standard asks for it, it is minor at most.

@@ -17,7 +17,9 @@ const FILE_LIMIT = 30_000;
  * calls.
  *
  * Reads `merged`, `context` and `input.workdir`. Writes `verified`. A
- * finding the verifier couldn't check stays valid and unchecked.
+ * finding the verifier couldn't check stays valid and unchecked. When the
+ * verifier gives a fix that keeps to the rules, it replaces the reviewer's
+ * suggestion.
  */
 export const verify =
   (deps: FlowDeps) =>
@@ -56,7 +58,8 @@ export const verify =
             user,
           });
           cost += res.costUsd ?? 0;
-          return { ...f, verification: parseVerification(res.text) };
+          const verification = parseVerification(res.text);
+          return { ...f, suggestion: verification.fix ?? f.suggestion, verification };
         } catch (e: any) {
           return { ...f, verification: UNCHECKED(String(e?.message ?? e).split("\n")[0]!) };
         }
@@ -79,9 +82,13 @@ export const verify =
 
 const VERDICTS = ["valid", "invalid", "conflict"] as const;
 
-/** The verifier's reply. A "valid" that quotes nothing counts as invalid; an unreadable reply leaves the finding unchecked. */
+/**
+ * The verifier's reply. A "valid" that quotes nothing counts as invalid; an
+ * unreadable reply leaves the finding unchecked. Only a valid finding keeps
+ * a `fix`.
+ */
 export function parseVerification(text: string): Verification {
-  const r = parseJsonReply<{ verdict?: string; evidence?: string; conflictsWith?: string; maxSeverity?: string }>(text, {});
+  const r = parseJsonReply<{ verdict?: string; evidence?: string; fix?: string; conflictsWith?: string; maxSeverity?: string }>(text, {});
   if (!VERDICTS.includes(r.verdict as any)) return UNCHECKED("the verifier gave no verdict");
   const evidence = String(r.evidence ?? "").trim();
   const maxSeverity = SEVERITIES.includes(r.maxSeverity as Severity) ? (r.maxSeverity as Severity) : undefined;
@@ -90,6 +97,7 @@ export function parseVerification(text: string): Verification {
     verdict: r.verdict as Verification["verdict"],
     evidence,
     conflictsWith: r.verdict === "conflict" ? String(r.conflictsWith ?? "").trim() || "an unnamed rule" : undefined,
+    fix: r.verdict === "valid" ? String(r.fix ?? "").trim() || undefined : undefined,
     maxSeverity,
     checked: true,
   };

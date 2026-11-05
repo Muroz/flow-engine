@@ -1,6 +1,6 @@
 # Prompts
 
-Each generative node has one Markdown prompt here, so you can read, diff and test a prompt without touching graph code. Judge questions are short enough to stay in the code: `assessBrief` and `checkCoverage` in `packages/planning/src/nodes/`, `assessRisk` in `packages/delivery/src/nodes/assess-risk.ts`, and `SEVERITY_QUESTION` and `REAL_QUESTION` in `packages/review/src/nodes/triage.ts`. `loadPrompt("review/security")` reads `review/security.md`, and `render` fills in each `{{placeholder}}`. `render` leaves unknown placeholders in the text, so a typo shows up in the model's input instead of failing silently.
+Each generative node has one Markdown prompt here, so you can read, diff and test a prompt without touching graph code. Judge questions are short enough to stay in the code: `assessBrief` and `checkCoverage` in `packages/planning/src/nodes/`, `assessRisk` in `packages/delivery/src/nodes/assess-risk.ts`, and `CATEGORY_QUESTION` and `REAL_QUESTION` in `packages/review/src/nodes/triage.ts`. `loadPrompt("review/security")` reads `review/security.md`, and `render` fills in each `{{placeholder}}`. `render` leaves unknown placeholders in the text, so a typo shows up in the model's input instead of failing silently.
 
 | File | Node | Placeholders |
 |---|---|---|

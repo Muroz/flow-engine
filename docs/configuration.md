@@ -28,6 +28,11 @@ review:
   escalateAtSeverity: blocker
   dropSeverities: [nit]
   ignore: ["src/generated/**"]
+  categories:
+    missingTests: minor
+    pii:
+      description: personal data logged or sent to a third party
+      severity: blocker
 
 delivery:
   maxAttempts: 3
@@ -95,8 +100,9 @@ Jev calls go straight to TypeSafe, not through OpenRouter, so `openrouter.provid
 |---|---|---|
 | `review.reviewers` | All six | Which specialists run. `spec` only runs with a task that has acceptance criteria. `architecture` only runs when there are ADRs, conventions or a standard listed for it. `docs` only runs when the diff changes docs or adds comments. |
 | `review.minConfidence` | `0.6` | Applies only to findings the verifier couldn't check: the judge drops those it is less sure of than this. The verifier decides the rest, dropping invalid findings and sending conflicts to you. |
-| `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped. `major` makes the flow ask you more often. Findings the verifier ruled out never count. |
+| `review.escalateAtSeverity` | `blocker` | A finding this severe that the judge is unsure of goes to you instead of being dropped, and so does a conflict with a rule this severe. `major` makes the flow ask you more often. Findings the verifier ruled out never count as unsure. |
 | `review.dropSeverities` | `[nit]` | Severities that never reach you. Add `minor` to see only blocking issues. |
+| `review.categories` | The built-in table | Changes to the triage table, the kinds of problem the judge picks from and the severity each sets. A severity alone, such as `missingTests: minor`, changes a built-in kind. `{ description, severity }` adds a kind, or replaces a built-in one; the judge reads the description. `other` is reserved. Loading the config fails on a bad entry and names it, and every run prints a warning when the table has more than 15 kinds. See [Severity](../packages/review/README.md#severity). |
 | `review.ignore` | `[]` | File patterns that review and walkthroughs skip, added to the built-in list of lockfiles, build output, source maps and snapshots. A pattern without a slash matches the file name in any folder, such as `*.generated.ts`. `**` matches any number of folders. |
 
 ### Delivery

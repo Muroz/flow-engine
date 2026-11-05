@@ -4,11 +4,16 @@ import { treeDiff } from "../agents/claude-code";
 import type { DeliveryState, DeliveryUpdate } from "../state";
 import { roundOf } from "./shared";
 
-/** A review finding as a note for the agent, with the reviewer's reason. */
+/**
+ * A review finding as a note for the agent, with the reviewer's reason. When
+ * the verifier found the reviewer's own fix would break a rule, the note
+ * carries the verifier's fix instead.
+ */
 export function findingNote(f: TriagedFinding): string {
   const where = f.file ? ` (${f.file}${f.line ? `:${f.line}` : ""})` : "";
   const why = f.rationale ? `: ${f.rationale.split(/(?<=\.)\s/)[0]}` : "";
-  return `[${f.judgedSeverity}] ${f.title}${where}${why}`;
+  const fix = f.verification?.fix ? ` Fix: ${f.verification.fix}` : "";
+  return `[${f.judgedSeverity}] ${f.title}${where}${why}${fix}`;
 }
 
 /**

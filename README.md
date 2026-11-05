@@ -26,7 +26,7 @@ Get started by pointing `flows review` at a branch you already have; [Use it on 
 ## Lexicon
 
 - **ADR:** architecture decision record. One file under `docs/adr/` that states a technical decision, its reasons and its costs. Delivery and review check code against the ADRs.
-- **Finding:** a problem a reviewer reports, with a location, a severity and a rationale. Verification can rule a finding out, and the judge re-rates the severity of the rest before the verdict.
+- **Finding:** a problem a reviewer reports, with a location, a severity and a rationale. Verification can rule a finding out. For the rest, the judge names the kind of problem, and the project's triage table sets the severity before the verdict.
 - **Gate:** a node that pauses the graph for a human decision, such as `approve`, `revise` or `merge`. It fits on one screen and links to the full text.
 - **Judge:** a model limited to typed answers (a probability, one option from a fixed set or a level on a scale) so code can branch on the result. [Jev](https://console.typesafe.ai) serves as judge when you have a TypeSafe key and the project doesn't restrict its providers; otherwise an ordinary LLM does.
 - **Node:** one step in a flow's graph: either plain code or a single model call.

@@ -104,6 +104,7 @@ These settings live under `review:` in `.flows.yaml`:
 - **`minConfidence`**, default 0.6: applies only to findings the verifier couldn't check. The verifier handles the rest; the report lists what it dropped under "Dropped by verification", so read that section if reviews start missing things.
 - **`dropSeverities`**: add `minor` if you only want blocking issues.
 - **`escalateAtSeverity`**: set it to `major` and the flow asks you more often.
+- **`categories`**: the triage table that sets each finding's severity from its kind. Read `runs/<project>/triage-gaps.md` now and then: it lists findings the table didn't fit, and a pattern there is a kind worth adding. See [Severity](../packages/review/README.md#severity).
 
 After a few real runs, compare the `review.triage` lines in the report's provenance section between Jev and the LLM judge. That comparison shows what Jev saves in time and cost.
 

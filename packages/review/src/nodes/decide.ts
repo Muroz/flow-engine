@@ -17,17 +17,19 @@ export const decide =
   };
 
 /**
- * The verdict and a one-line reason. Conflicts escalate first, then serious
- * findings the judge isn't sure about. Kept major or blocker findings mean
- * fix; anything else passes.
+ * The verdict and a one-line reason. Conflicts that would loop escalate
+ * first, then serious findings the judge isn't sure about. Kept major or
+ * blocker findings mean fix; anything else passes. A conflict that doesn't
+ * escalate stays out of the fix list and waits in the report for you.
  */
 export function decideVerdict(
   findings: TriagedFinding[],
   policy: { minConfidence: number; escalateAtSeverity: Severity },
 ): { verdict: "pass" | "fix" | "escalate"; reason: string } {
-  // Two rules, or two rounds, pull opposite ways. Fixing either side would
-  // only bring the other back next round, so a person decides once.
-  const conflicts = findings.filter(isConflict);
+  // Two rounds pull opposite ways, or a serious finding clashes with a rule.
+  // Fixing either side would only bring the other back next round, so a
+  // person decides once.
+  const conflicts = findings.filter((f) => isConflict(f) && conflictEscalates(f, policy));
   if (conflicts.length) {
     return { verdict: "escalate", reason: `reviewers disagree: ${conflicts.map((f) => `"${f.title}" vs ${conflictWith(f)}`).join("; ")}` };
   }
@@ -49,6 +51,15 @@ export function decideVerdict(
 /** The verifier found a clash with a rule or earlier round, or the reviewer said it would undo one. */
 export const isConflict = (f: TriagedFinding) =>
   (f.verification?.checked && f.verification.verdict === "conflict") || (!!f.reverses && !isRuledOut(f));
+
+/**
+ * Whether a conflict stops the review. One that would undo an earlier round
+ * always does, because sending it on starts a loop. One against a rule does
+ * only at `escalateAtSeverity` or above; below that it is too small to hold
+ * up the fixes.
+ */
+export const conflictEscalates = (f: TriagedFinding, policy: { escalateAtSeverity: Severity }) =>
+  !!f.reverses || /^round \d+/i.test(f.verification?.conflictsWith ?? "") || rank(f.judgedSeverity) >= rank(policy.escalateAtSeverity);
 
 /** The verifier showed the finding is wrong. */
 export const isInvalid = (f: TriagedFinding) => !!f.verification?.checked && f.verification.verdict === "invalid";

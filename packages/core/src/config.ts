@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import YAML from "yaml";
+import { DEFAULT_CATEGORIES, parseCategories, type CategoryTable } from "./categories";
 import type { Severity } from "./types";
 
 /**
@@ -48,6 +49,8 @@ export type ProjectConfig = {
     dropSeverities: Severity[];
     /** Files left out of every review and walkthrough. Added to DEFAULT_REVIEW_IGNORE. */
     ignore: string[];
+    /** The triage table: each kind of problem and its severity. DEFAULT_CATEGORIES with the project's changes merged in. */
+    categories: CategoryTable;
   };
 
   delivery: {
@@ -118,6 +121,7 @@ const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
     escalateAtSeverity: "blocker",
     dropSeverities: ["nit"],
     ignore: [],
+    categories: DEFAULT_CATEGORIES,
   },
   delivery: {
     maxAttempts: 3,
@@ -163,7 +167,7 @@ export function loadConfig(repoDir: string, artifactsDir?: string): ProjectConfi
     models: { ...DEFAULTS.models, ...(raw.models ?? {}) },
     openrouterProvider: raw.openrouter?.provider ?? DEFAULTS.openrouterProvider,
     judgeEngine: raw.judge?.engine ?? DEFAULTS.judgeEngine,
-    review: { ...DEFAULTS.review, ...(raw.review ?? {}) },
+    review: { ...DEFAULTS.review, ...(raw.review ?? {}), categories: parseCategories(raw.review?.categories) },
     delivery: { ...DEFAULTS.delivery, ...(raw.delivery ?? {}) },
     conventions: raw.conventions ?? DEFAULTS.conventions,
     standards: parseStandards(raw.standards),

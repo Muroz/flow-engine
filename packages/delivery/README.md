@@ -111,7 +111,7 @@ With no checks listed, the step counts as passed and the review runs on its own.
 
 ## Agent notes and declines
 
-Each failed check or kept review finding becomes a note for the next attempt. In a follow-up round, the agent's prompt says to fix only those notes and change nothing else. When a note contradicts an ADR, a project standard, an acceptance criterion or an earlier round's request, the agent leaves it alone and ends its reply with a line such as `Declined: Move the client under src/lib — ADR-0007 puts it in src/db`. Delivery records each decline, and the next review and the escalate gate show it, so a person decides instead of the agent and the reviewer going back and forth.
+Each failed check or kept review finding becomes a note for the next attempt. When the verifier found that a reviewer's own fix would break a rule, the note ends with the verifier's fix instead. In a follow-up round, the agent's prompt says to fix only those notes and change nothing else. When a note contradicts an ADR, a project standard, an acceptance criterion or an earlier round's request, the agent leaves it alone and ends its reply with a line such as `Declined: Move the client under src/lib — ADR-0007 puts it in src/db`. Delivery records each decline, and the next review and the escalate gate show it, so a person decides instead of the agent and the reviewer going back and forth.
 
 ## Cost
 

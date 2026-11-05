@@ -22,6 +22,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   allAdrs,
+  categoryWarnings,
   checkAdrs,
   createDeps,
   ENGINE_ROOT,
@@ -143,6 +144,7 @@ if (args.task && !task) {
 
 const models = deps.offline ? " · OFFLINE (mocks)" : ` · models ${deps.backends.join("+") || "none"}`;
 console.log(`▶ ${resumed ? "resume " : ""}${command} · project ${config.project} · judge ${deps.judge.name}${models}\n`);
+for (const warning of categoryWarnings(config.review.categories)) console.log(`⚠ ${warning}\n`);
 
 /** Runs the review flow with the same progress lines as the gated flows, and returns its final state. */
 function streamReview(input: unknown): Promise<unknown> {
