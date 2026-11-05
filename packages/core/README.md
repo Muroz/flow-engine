@@ -44,6 +44,8 @@ There are three question types:
 
 Every generative node calls `deps.model.complete` with a model ID. On a live run, `deps.model` is a `RoutingModelClient`. It sends IDs that start with `claude-code/` to `ClaudeCodeClient` and everything else to `OpenRouterClient`, so nodes never know which backend answered. The LLM judge uses the same client, so `models.judge` can sit on either backend.
 
+`OpenRouterClient` retries a call that fails for a reason that clears up on its own: a rate limit (429), a server error (5xx) or a 402 for the in-flight credit budget. It waits as long as OpenRouter's `Retry-After` says, at most three minutes, or else 5, 10 and 20 seconds, and gives up after three retries. It prints a line for each wait. A 402 for no credit left, and any other 4xx, fails at once.
+
 `ClaudeCodeClient` runs `claude -p` once per call with tools, settings and MCP servers turned off, and reads the reply from its JSON output. It takes a `ClaudeRunner` so tests can swap in a fake `claude`, as `test/models.test.ts` does.
 
 To add another backend, implement `ModelClient`, give it a prefix and add a route in `RoutingModelClient` and `createDeps`.
@@ -63,4 +65,4 @@ To add another backend, implement `ModelClient`, give it a prefix and add a rout
 
 ## Tests
 
-`test/adrs.test.ts` covers relations, how a task's ADRs follow supersessions and amendments, and `checkAdrs`. `test/deps.test.ts` covers how the judge engine and backends are picked, `--claude-code` and the Anthropic guard. `test/judge.test.ts` covers how Jev scores map to levels. `test/models.test.ts` covers `ClaudeCodeClient` and `RoutingModelClient`. `test/standards.test.ts` covers project standards and `writingRules`. Run them with `pnpm test` from the engine root.
+`test/adrs.test.ts` covers relations, how a task's ADRs follow supersessions and amendments, and `checkAdrs`. `test/deps.test.ts` covers how the judge engine and backends are picked, `--claude-code` and the Anthropic guard. `test/judge.test.ts` covers how Jev scores map to levels. `test/models.test.ts` covers `ClaudeCodeClient`, `RoutingModelClient` and the OpenRouter retries. `test/standards.test.ts` covers project standards and `writingRules`. Run them with `pnpm test` from the engine root.

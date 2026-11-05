@@ -34,16 +34,56 @@ export interface ModelClient {
 
 // ── OpenRouter ──────────────────────────────────────────────────────────────
 
+export type RetryOptions = {
+  /** Retries after the first call. */
+  maxRetries?: number;
+  fetch?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  /** Told about each wait, so a long one doesn't look like a hang. */
+  onRetry?: (note: string) => void;
+};
+
+/** Waits OpenRouter asks for can be long, but never longer than this. */
+const MAX_WAIT_MS = 180_000;
+
 export class OpenRouterClient implements ModelClient {
+  private readonly retries: Required<RetryOptions>;
+
   constructor(
     private readonly apiKey: string,
     /** Forwarded as OpenRouter's `provider` routing object (data policy, allow-lists). */
     private readonly provider?: Record<string, unknown>,
     private readonly baseUrl = "https://openrouter.ai/api/v1",
-  ) {}
+    retries: RetryOptions = {},
+  ) {
+    this.retries = {
+      maxRetries: retries.maxRetries ?? 3,
+      fetch: retries.fetch ?? ((...args) => fetch(...args)),
+      sleep: retries.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+      onRetry: retries.onRetry ?? ((note) => console.error(`      ${note}`)),
+    };
+  }
 
+  /**
+   * Rate limits (429), server errors (5xx) and a 402 for the in-flight
+   * budget clear up on their own, so they retry: after OpenRouter's
+   * Retry-After when it gives one, else 5, 10 and 20 seconds. A 402 for
+   * no credit, and any other 4xx, fails at once.
+   */
   async complete(req: CompletionRequest): Promise<CompletionResult> {
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    for (let attempt = 0; ; attempt++) {
+      const res = await this.send(req);
+      if (res.ok) return this.parse(res, req);
+      const text = await res.text();
+      const wait = attempt < this.retries.maxRetries ? retryAfterMs(res, text, attempt) : undefined;
+      if (wait === undefined) throw new Error(`OpenRouter ${res.status} for ${req.tag}: ${text}`);
+      this.retries.onRetry(`OpenRouter ${res.status} for ${req.tag}, retrying in ${Math.round(wait / 1000)}s (${attempt + 1}/${this.retries.maxRetries})`);
+      await this.retries.sleep(wait);
+    }
+  }
+
+  private send(req: CompletionRequest): Promise<Response> {
+    return this.retries.fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -62,11 +102,9 @@ export class OpenRouterClient implements ModelClient {
         usage: { include: true }, // returns cost so every node can log it
       }),
     });
+  }
 
-    if (!res.ok) {
-      throw new Error(`OpenRouter ${res.status} for ${req.tag}: ${await res.text()}`);
-    }
-
+  private async parse(res: Response, req: CompletionRequest): Promise<CompletionResult> {
     const body: any = await res.json();
     return {
       text: body.choices?.[0]?.message?.content ?? "",
@@ -74,6 +112,22 @@ export class OpenRouterClient implements ModelClient {
       costUsd: typeof body.usage?.cost === "number" ? body.usage.cost : undefined,
     };
   }
+}
+
+/** How long to wait before retrying a failed call, or undefined when a retry won't help. */
+function retryAfterMs(res: Response, text: string, attempt: number): number | undefined {
+  let body: any;
+  try {
+    body = JSON.parse(text);
+  } catch {}
+  const transient =
+    res.status === 429 ||
+    res.status >= 500 ||
+    (res.status === 402 && body?.error?.metadata?.reason === "in_flight_budget_exhausted");
+  if (!transient) return undefined;
+  const told = Number(res.headers.get("retry-after") ?? body?.error?.metadata?.headers?.["Retry-After"]);
+  const ms = Number.isFinite(told) && told > 0 ? told * 1000 : 5_000 * 2 ** attempt;
+  return Math.min(ms, MAX_WAIT_MS);
 }
 
 // ── Claude Code ─────────────────────────────────────────────────────────────
