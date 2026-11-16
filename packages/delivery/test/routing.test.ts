@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MockJudge, MockModelClient, type FlowDeps, type ProjectConfig } from "@flows/core";
 import { END } from "@langchain/langgraph";
-import { afterChecks, afterEscalate, afterImplement, afterMerge, afterPlanGate, afterReview, afterRisk, pickComments } from "../src/nodes";
+import { afterChecks, afterEscalate, afterImplement, afterMerge, afterPlanGate, afterReview, afterRisk, decisionNote, pickComments } from "../src/nodes";
 import type { DeliveryState } from "../src/state";
 
 const deps = {
@@ -134,4 +134,24 @@ test("a finding note carries the verifier's fix when the reviewer's own would br
   assert.equal(findingNote(base), "[major] Move SQL out of the route (src/a.ts:3): The route runs SQL.");
   const fixed = { ...base, verification: { verdict: "valid" as const, evidence: "line 3", fix: "Put the query in src/db/repository.ts.", checked: true } };
   assert.equal(findingNote(fixed), "[major] Move SQL out of the route (src/a.ts:3): The route runs SQL. Fix: Put the query in src/db/repository.ts.");
+});
+
+test("a gate note carries the open items it answers, so the agent knows what it decides", () => {
+  const ledger = [
+    { round: 2, reviewer: "correctness", severity: "major", title: "Skip build dirs only at the root", file: "scripts/x.mts", rationale: "Nested out/ is source.", status: "sent" },
+    { round: 3, reviewer: "correctness", severity: "major", title: "Skip node_modules at any depth", file: "scripts/x.mts", rationale: "Nested deps get flagged.", status: "escalated", note: "conflicts with round 2" },
+    { round: 3, reviewer: "tests", severity: "major", title: "Revisit include files", rationale: "Depth limit.", status: "sent" },
+  ] as const;
+  const note = decisionNote([...ledger], "skip those at any depth");
+  assert.match(note.split("\n")[0]!, /^Your call.*"skip those at any depth"/);
+  assert.match(note, /round 3, conflict: Skip node_modules at any depth \[scripts\/x\.mts\] \(conflicts with round 2\)\. Nested deps get flagged\./);
+  assert.doesNotMatch(note, /Revisit include files|Skip build dirs only/, "items sent to the agent are not open");
+  assert.equal(decisionNote([ledger[0], ledger[2]], "also rename it"), "also rename it", "nothing open: the note goes as is");
+});
+
+test("merge-gate fix wraps only your own text, not the picked comments", () => {
+  const wrap = (t: string) => `<${t}>`;
+  assert.deepEqual(pickComments(["a", "b"], "2: and c", wrap), ["b", "<and c>"]);
+  assert.deepEqual(pickComments(["a", "b"], "just c", wrap), ["<just c>"]);
+  assert.deepEqual(pickComments(["a", "b"], "1", wrap), ["a"]);
 });

@@ -1,7 +1,7 @@
 import { logEntry, totalCost, type FlowDeps, type TriagedFinding } from "@flows/core";
 import { rank } from "@flows/review";
 import type { DeliveryState, DeliveryUpdate } from "../state";
-import { findingNote, openItems } from "./review";
+import { decisionNote, findingNote, openItems } from "./review";
 import { gate, overBudget, spentSince } from "./shared";
 
 /** One line per review round so far, such as "round 2: fix, 2 major/blocker finding(s)". */
@@ -64,7 +64,7 @@ export const escalate =
         escalation: "retry",
         attempts: Math.max(0, maxAttempts - retryAttempts),
         budgetFrom: totalCost(s.log),
-        fixNotes: [...s.fixNotes, ...(d.notes ? [d.notes] : [])],
+        fixNotes: [...s.fixNotes, ...(d.notes?.trim() ? [decisionNote(s.ledger ?? [], d.notes.trim())] : [])],
         log: [logEntry("delivery.escalate", { note: "retry" })],
       };
     }

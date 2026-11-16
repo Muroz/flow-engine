@@ -73,11 +73,32 @@ const toPrior = (f: TriagedFinding, round: number, status: PriorFinding["status"
   status,
 });
 
-/** Findings still open from any round: the ones the agent declined and the conflicts left for you, latest per title. */
-export function openItems(ledger: PriorFinding[]): string[] {
+/** Ledger entries still open from any round: the ones the agent declined and the conflicts left for you, latest per title. */
+function openEntries(ledger: PriorFinding[]): PriorFinding[] {
   const latest = new Map<string, PriorFinding>();
   for (const p of ledger) latest.set(p.title, p);
-  return [...latest.values()]
-    .filter((p) => p.status !== "sent")
-    .map((p) => `round ${p.round}, ${p.status === "declined" ? "declined by the agent" : "conflict"}: ${p.title}${p.note ? ` (${p.note})` : ""}`);
+  return [...latest.values()].filter((p) => p.status !== "sent");
+}
+
+const describeOpen = (p: PriorFinding) =>
+  `round ${p.round}, ${p.status === "declined" ? "declined by the agent" : "conflict"}: ${p.title}${p.file ? ` [${p.file}]` : ""}${p.note ? ` (${p.note})` : ""}`;
+
+/** Findings still open from any round, one line each, as the gates list them. */
+export function openItems(ledger: PriorFinding[]): string[] {
+  return openEntries(ledger).map(describeOpen);
+}
+
+/**
+ * Your note from a gate, as a fix note. The gate lists the open items for you
+ * to decide, but a bare note like "skip those at any depth" reaches the agent
+ * without them, and it can't tell what the note answers. So while items are
+ * open, the note carries them, with the reviewer's reason for each.
+ */
+export function decisionNote(ledger: PriorFinding[], note: string): string {
+  const open = openEntries(ledger);
+  if (!open.length) return note;
+  return [
+    `Your call, from the person running this flow: "${note}". It decides the open item${open.length > 1 ? "s" : ""} below that it answers; follow it over the earlier request.`,
+    ...open.map((p) => `  - ${describeOpen(p)}. ${p.rationale}`.trimEnd()),
+  ].join("\n");
 }

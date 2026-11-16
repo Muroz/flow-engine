@@ -3,7 +3,7 @@ import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { mergeWorktree } from "../agents/claude-code";
 import type { DeliveryState, DeliveryUpdate } from "../state";
 import { appendJournal } from "../walkthrough";
-import { findingNote, openItems } from "./review";
+import { decisionNote, findingNote, openItems } from "./review";
 import { describeCheck } from "./run-checks";
 import { gate, roundOf, say } from "./shared";
 
@@ -12,13 +12,13 @@ import { gate, roundOf, say } from "./shared";
  * them. Leading numbers, such as "1,3: also rename the helper": those, plus
  * the text. Text alone: just the text.
  */
-export function pickComments(comments: string[], notes: string | undefined): string[] {
+export function pickComments(comments: string[], notes: string | undefined, asNote: (text: string) => string = (t) => t): string[] {
   const text = (notes ?? "").trim();
   if (!text) return comments;
   const m = text.match(/^([\d,\s]+)(?::\s*([\s\S]*))?$/) ?? text.match(/^([\d,\s]+):\s*([\s\S]*)$/);
-  if (!m) return [text];
+  if (!m) return [asNote(text)];
   const picked = m[1]!.split(/[,\s]+/).filter(Boolean).map((n) => comments[Number(n) - 1]).filter((c): c is string => !!c);
-  return m[2]?.trim() ? [...picked, m[2].trim()] : picked;
+  return m[2]?.trim() ? [...picked, asNote(m[2].trim())] : picked;
 }
 
 /**
@@ -57,7 +57,7 @@ export const approveMerge =
       return {
         attempts: Math.max(0, deps.config.delivery.maxAttempts - deps.config.delivery.retryAttempts),
         budgetFrom: totalCost(s.log),
-        fixNotes: pickComments(comments, d.notes),
+        fixNotes: pickComments(comments, d.notes, (t) => decisionNote(s.ledger ?? [], t)),
         walkthrough: undefined,
         log: [logEntry("delivery.approveMerge", { note: "fix" })],
       };
