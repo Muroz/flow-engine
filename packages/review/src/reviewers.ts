@@ -148,9 +148,67 @@ export function standardsFor(reviewerId: string, ctx: ReviewContext): string {
   ].join("\n\n");
 }
 
-/** Reviewers enabled in config that apply to this context. */
-export function activeReviewers(ids: string[], ctx: ReviewContext): ReviewerSpec[] {
+/**
+ * Reviewers enabled in config that apply to this context. With
+ * `laterRounds: "changed"`, a later round keeps only the ones `roundScope`
+ * picks.
+ */
+export function activeReviewers(ids: string[], ctx: ReviewContext, laterRounds: "changed" | "all" = "all"): ReviewerSpec[] {
+  const scope = laterRounds === "changed" ? roundScope(ctx) : undefined;
   return ids
     .map((id) => REVIEWERS[id])
-    .filter((r): r is ReviewerSpec => !!r && (r.appliesTo?.(ctx) ?? true));
+    .filter((r): r is ReviewerSpec => !!r && (r.appliesTo?.(ctx) ?? true) && (!scope || scope.reviewers.has(r.id)));
+}
+
+/** What a later round changed, by the reviewer whose area it is. */
+export type ChangeKind = "code" | "tests" | "comments" | "docs" | "adr";
+
+const TEST_FILE = /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
+const COMMENT_LINE = /^\s*(\/\/|\/\*|\*|#(?!!)|<!--)/;
+
+/** The kinds of change in a diff: ADR files, other doc files, comment-only edits, test code or other code. */
+export function changeKinds(diff: string): Set<ChangeKind> {
+  const kinds = new Set<ChangeKind>();
+  for (const { file, text } of splitDiff(diff)) {
+    if (DOC_FILE.test(file)) {
+      kinds.add(/(^|\/)docs\/adr\//.test(file) ? "adr" : "docs");
+      continue;
+    }
+    const changed = text
+      .split("\n")
+      .filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l))
+      .map((l) => l.slice(1))
+      .filter((l) => l.trim());
+    if (!changed.length) continue;
+    if (changed.every((l) => COMMENT_LINE.test(l))) kinds.add("comments");
+    else kinds.add(TEST_FILE.test(file) ? "tests" : "code");
+  }
+  return kinds;
+}
+
+/** Who reviews each kind of change in a later round. Code can break anything, so it gets everyone. */
+const REVIEWERS_FOR: Record<ChangeKind, string[] | "all"> = {
+  code: "all",
+  tests: ["tests"],
+  comments: ["docs"],
+  docs: ["docs"],
+  adr: ["architecture", "docs"],
+};
+
+/**
+ * Which reviewers a later round needs, or undefined on a first round or when
+ * the change since the last round is unknown. They are the reviewers whose
+ * area the changes touch, plus each reviewer with a finding from the last
+ * round, so it can check the fix.
+ */
+export function roundScope(ctx: ReviewContext): { kinds: ChangeKind[]; reviewers: Set<string> } | undefined {
+  if (!ctx.prior.length || ctx.delta === undefined) return undefined;
+  const kinds = changeKinds(ctx.delta);
+  if (kinds.has("code")) return { kinds: [...kinds], reviewers: new Set(Object.keys(REVIEWERS)) };
+  const last = Math.max(...ctx.prior.map((p) => p.round));
+  const reviewers = new Set([
+    ...[...kinds].flatMap((k) => REVIEWERS_FOR[k] as string[]),
+    ...ctx.prior.filter((p) => p.round === last && p.status !== "escalated").map((p) => p.reviewer),
+  ]);
+  return { kinds: [...kinds], reviewers };
 }

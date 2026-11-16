@@ -74,6 +74,8 @@ Each specialist sees only its own view of the context. That keeps prompts short 
 | `architecture` | The task's ADRs by clause, conventions, diff | The project has ADRs, conventions or standards listed for it. |
 | `docs` | Writing rules for developers, doc files, and the code hunks that add comments | The diff changes a Markdown or text file, or adds a comment line. |
 
+In a later round of a delivery task, `review.laterRounds: changed` (the default) runs only the specialists the round needs. `roundScope` in `src/reviewers.ts` sorts the changes since the last round into code, tests, comment-only edits, docs and ADRs. A change to code runs every specialist. Otherwise only the matching ones run: `tests` for tests, `docs` for comments and docs, `architecture` and `docs` for an ADR. Each specialist with a finding from the last round also runs, so it can check the fix. The `loadContext` line in the report names the ones that sat out.
+
 To add a specialist:
 
 1. Add an entry to `REVIEWERS` in `src/reviewers.ts`, with its `view` and, if it needs one, `appliesTo`.

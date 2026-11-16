@@ -353,3 +353,38 @@ test("triage logs a finding torn between severities, not one split between kinds
   assert.match(out.log![0]!.note!, /1 didn't fit the table/);
   assert.deepEqual(out.log![0]!.details, ["no good fit (security, 0.40): Torn"]);
 });
+
+test("changeKinds sorts a diff into code, tests, comment-only edits, docs and ADRs", async () => {
+  const { changeKinds } = await import("../src/reviewers");
+  const file = (name: string, ...lines: string[]) => `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n${lines.join("\n")}\n`;
+  const kinds = (d: string) => [...changeKinds(d)].sort();
+  assert.deepEqual(kinds(file("src/a.ts", "-const a = 1;", "+const a = 2;")), ["code"]);
+  assert.deepEqual(kinds(file("test/a.test.ts", "+it('x', () => {});")), ["tests"]);
+  assert.deepEqual(kinds(file("src/a.test.ts", "+expect(1).toBe(1);")), ["tests"]);
+  assert.deepEqual(kinds(file("test/a.test.ts", "-// old wording", "+// new wording", "+")), ["comments"]);
+  assert.deepEqual(kinds(file("README.md", "+text")), ["docs"]);
+  assert.deepEqual(kinds(file("docs/adr/0007-x.md", "+text")), ["adr"]);
+  assert.deepEqual(kinds(file("src/a.ts", " unchanged context")), []);
+});
+
+test("a later round reviews only what changed, plus whoever raised the last round's findings", () => {
+  const base = { diff: "", files: [], skipped: [], standards: [], adrs: [], allAdrs: [], conventions: [] };
+  const ids = ["spec", "correctness", "security", "tests", "architecture", "docs"];
+  const prior = [
+    { round: 1, reviewer: "security", severity: "major" as const, title: "a", rationale: "", status: "sent" as const },
+    { round: 2, reviewer: "correctness", severity: "major" as const, title: "b", rationale: "", status: "sent" as const },
+    { round: 2, reviewer: "architecture", severity: "major" as const, title: "c", rationale: "", status: "escalated" as const },
+  ];
+  const testOnly = "diff --git a/test/a.test.ts b/test/a.test.ts\n+++ b/test/a.test.ts\n+it('x', () => {});\n";
+  const commentOnly = "diff --git a/src/a.ts b/src/a.ts\n+++ b/src/a.ts\n+// clearer\n";
+  const code = "diff --git a/src/a.ts b/src/a.ts\n+++ b/src/a.ts\n+const a = 2;\n";
+  const run = (ctx: object, mode: "changed" | "all" = "changed") => activeReviewers(ids, { ...base, prior, ...ctx } as any, mode).map((r) => r.id);
+  // docs only runs when the diff has comments or doc files, so give it some.
+  const withComment = { diff: "+++ b/src/a.ts\n+// note", files: ["src/a.ts"] };
+  assert.deepEqual(run({ ...withComment, delta: testOnly }), ["correctness", "tests"], "the tests reviewer, and correctness to check its round-2 finding");
+  assert.deepEqual(run({ ...withComment, delta: commentOnly }), ["correctness", "docs"]);
+  assert.deepEqual(run({ ...withComment, delta: code }), ["correctness", "security", "tests", "docs"], "code gets everyone that applies");
+  assert.deepEqual(run({ ...withComment, delta: testOnly }, "all"), ["correctness", "security", "tests", "docs"]);
+  assert.deepEqual(run({ ...withComment, delta: undefined }), ["correctness", "security", "tests", "docs"], "unknown change: everyone");
+  assert.deepEqual(activeReviewers(ids, { ...base, ...withComment, prior: [], delta: testOnly } as any, "changed").map((r) => r.id), ["correctness", "security", "tests", "docs"], "a first round is never scoped");
+});

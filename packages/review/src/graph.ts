@@ -40,7 +40,7 @@ export const ReviewAnnotation = Annotation.Root({
 export function buildReviewGraph(deps: FlowDeps) {
   // Conditional edge that fans out: one Send per applicable specialist.
   const fanOut = (state: ReviewState) => {
-    const specs = activeReviewers(deps.config.review.reviewers, state.context!);
+    const specs = activeReviewers(deps.config.review.reviewers, state.context!, deps.config.review.laterRounds);
     if (specs.length === 0) return "aggregate";
     return specs.map((spec) => new Send("reviewer", { ...state, currentReviewer: spec.id }));
   };

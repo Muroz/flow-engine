@@ -10,8 +10,6 @@ DECISIONS (ADRs), BY CLAUSE:
 
 Judge against the trust model the task and the ADRs state. When an ADR clause says what the app trusts and what it treats as hostile, a finding that assumes a stronger attacker than that clause allows is beyond the task: rate it minor and cite the clause. When an ADR lists the ways a threat is closed, report a way missing from that list, and cite the clause the list lives in. When nothing states a trust model, assume input from outside the app is hostile.
 
-Report a whole class at once. When you find one way for a kind of input to reach a kind of sink, such as one config key that makes a command run a program, list every member of that class you know of in the same finding, both the ones the diff already closes and the ones it doesn't. The agent fixes the class in one round instead of one member per round.
-
 PROJECT STANDARDS:
 {{standards}}
 

@@ -155,7 +155,9 @@ export function agentPrompt(s: DeliveryState, deps: FlowDeps): string {
     deps.config.conventions.length ? `Conventions:\n${bullets(deps.config.conventions)}` : "",
     s.fixNotes.length
       ? [
-          `This is a follow-up round. The code from earlier rounds is already in place. Fix these, and change nothing else:\n${bullets(s.fixNotes)}`,
+          `This is a follow-up round. The code from earlier rounds is already in place. Fix these notes:\n${bullets(s.fixNotes)}`,
+          "Fix each note's whole class, not only the case it names. When a note shows one input the code mishandles, find the other inputs of the same kind and handle them too. " +
+            "Each fix comes with a test that fails without it; for a class of inputs, use one table-driven test. Change nothing the notes don't call for.",
           "If a note contradicts an ADR, a project standard, an acceptance criterion or a change an earlier round asked for, don't apply it. " +
             "End your reply with one line per note you didn't apply, in the form `Declined: <note title> — <reason>`. A person will decide.",
         ].join("\n\n")

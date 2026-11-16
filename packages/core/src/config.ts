@@ -51,6 +51,12 @@ export type ProjectConfig = {
     ignore: string[];
     /** The triage table: each kind of problem and its severity. DEFAULT_CATEGORIES with the project's changes merged in. */
     categories: CategoryTable;
+    /**
+     * Which reviewers run after the first round. "changed": those whose area
+     * the round's changes touch, plus those with a finding from the last
+     * round. "all": every reviewer, every round.
+     */
+    laterRounds: "changed" | "all";
   };
 
   delivery: {
@@ -122,6 +128,7 @@ const DEFAULTS: Omit<ProjectConfig, "project" | "repoDir" | "artifactsDir"> = {
     dropSeverities: ["nit"],
     ignore: [],
     categories: DEFAULT_CATEGORIES,
+    laterRounds: "changed",
   },
   delivery: {
     maxAttempts: 3,
