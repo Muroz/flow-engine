@@ -3,13 +3,14 @@
  *
  * The important part is `view`: each specialist gets a *narrow* slice of the
  * context, rendered into its prompt. The security reviewer never sees the
- * PRD; the spec reviewer never sees the ADRs. Smaller context → sharper
- * reviews, lower cost, and fewer "while I'm here…" tangents.
+ * PRD, but it does see the task's ADRs, where the trust model lives. The
+ * spec reviewer sees only the ADRs its criteria name. Smaller context means
+ * sharper reviews, lower cost and fewer "while I'm here" tangents.
  *
  * To add a reviewer: add an entry here, add prompts/review/<id>.md, and list
  * the id under `review.reviewers` in .flows.yaml.
  */
-import { adrHeading, render, splitDiff, writingRules, type AdrRef, type PriorFinding } from "@flows/core";
+import { adrBrief, render, splitDiff, writingRules, type AdrRef, type PlannedTask, type PriorFinding } from "@flows/core";
 import type { ReviewContext } from "./state";
 
 export type ReviewerSpec = {
@@ -30,7 +31,7 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
     prompt: "review/spec",
     appliesTo: (ctx) => !!ctx.task && ctx.task.acceptanceCriteria.length > 0,
     view: (ctx) => ({
-      task_title: `${ctx.task!.id}: ${ctx.task!.title}`,
+      task_scope: taskScope(ctx.task),
       acceptance_criteria: bullets(ctx.task!.acceptanceCriteria),
       decisions: decisionsText(adrsNamedIn(ctx.task!.acceptanceCriteria, ctx.allAdrs)),
       diff: ctx.diff,
@@ -46,7 +47,7 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
   security: {
     id: "security",
     prompt: "review/security",
-    view: (ctx) => ({ diff: ctx.diff }),
+    view: (ctx) => ({ task_scope: taskScope(ctx.task), decisions: decisionsText(ctx.adrs), diff: ctx.diff }),
   },
 
   tests: {
@@ -78,10 +79,22 @@ export const REVIEWERS: Record<string, ReviewerSpec> = {
   },
 };
 
-export const decisionsText = (adrs: AdrRef[]) =>
-  adrs.length ? adrs.map((a) => `### ${adrHeading(a)}\n${a.decision}`).join("\n\n") : "(none)";
+/** Each ADR by clause, so a finding can cite "ADR-0001 clause 3". */
+export const decisionsText = (adrs: AdrRef[]) => (adrs.length ? adrs.map((a) => `### ${adrBrief(a)}`).join("\n\n") : "(none)");
 
-/** The ADRs that acceptance criteria mention by ID, such as "as ADR-0006 scopes it". */
+/** The task's description and what it leaves out, or "(no task)" for a bare diff. */
+export function taskScope(task: PlannedTask | undefined): string {
+  if (!task) return "(no task: judge the diff on its own)";
+  return [
+    `${task.id}: ${task.title}`,
+    task.description ?? "",
+    `Out of scope:\n${bullets(task.outOfScope ?? [])}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** The ADRs that acceptance criteria mention by ID, such as "as ADR-0006 scopes it" or "ADR-0001 clause 3". */
 export function adrsNamedIn(criteria: string[], adrs: AdrRef[]): AdrRef[] {
   const named = new Set(criteria.join("\n").match(/ADR-\d{4}/g) ?? []);
   return adrs.filter((a) => named.has(a.id));

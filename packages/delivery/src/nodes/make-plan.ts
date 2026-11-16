@@ -1,4 +1,4 @@
-import { loadPrompt, logEntry, modelFor, parseJsonReply, render, type FlowDeps } from "@flows/core";
+import { adrBrief, loadAdrs, loadPrompt, logEntry, modelFor, parseJsonReply, render, type FlowDeps } from "@flows/core";
 import type { DeliveryState, DeliveryUpdate } from "../state";
 import { bullets } from "./shared";
 
@@ -6,7 +6,7 @@ import { bullets } from "./shared";
  * Generative. A short implementation plan for the task, rewritten with your
  * notes when you ask for a revision at the plan gate.
  *
- * Reads `task`, and `plan` with `planFeedback` on a revision. Writes `plan`
+ * Reads `task` and the ADRs it cites, and `plan` with `planFeedback` on a revision. Writes `plan`
  * and clears `planFeedback`.
  */
 export const makePlan =
@@ -18,9 +18,10 @@ export const makePlan =
       json: true,
       system: "You are a senior engineer writing a short implementation plan for one task.",
       user: render(loadPrompt("delivery/plan"), {
-        task: `${s.task.id}: ${s.task.title}`,
+        task: `${s.task.id}: ${s.task.title}${s.task.description ? `\n${s.task.description}` : ""}`,
         acceptance_criteria: bullets(s.task.acceptanceCriteria),
-        adrs: s.task.adrRefs.join(", ") || "(none)",
+        out_of_scope: s.task.outOfScope?.length ? bullets(s.task.outOfScope) : "(none listed)",
+        adrs: loadAdrs(deps.config, s.task.adrRefs).map(adrBrief).join("\n\n") || "(none)",
         feedback: s.planFeedback && s.plan ? `${s.plan.summary}\n${bullets(s.plan.steps)}\n\nNotes: ${s.planFeedback}` : "(none)",
       }),
     });

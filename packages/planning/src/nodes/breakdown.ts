@@ -22,7 +22,7 @@ export const breakdown =
       system: "You break projects into small, independently reviewable tasks with explicit dependencies.",
       user: render(loadPrompt("planning/breakdown"), {
         requirements: reqList(mvp(s.requirements)),
-        adrs: s.adrs.map((a) => `${a.id}: ${a.title} — ${a.decision}`).join("\n"),
+        adrs: s.adrs.map((a) => [`${a.id}: ${a.title}`, ...a.clauses.map((c, i) => `  ${i + 1}. ${c}`)].join("\n")).join("\n"),
         previous: s.tasks.length ? JSON.stringify(s.tasks) : "(none)",
         gaps: gaps.length ? `GAPS — these requirements are not covered yet: ${gaps.join(", ")}` : "",
       }),

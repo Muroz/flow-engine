@@ -2,7 +2,7 @@
  * What each planning gate shows. A gate summary fits one screen; the full
  * text goes to a detail file the gate links to.
  */
-import type { PlannedTask } from "@flows/core";
+import { clauseRefs, type PlannedTask } from "@flows/core";
 import type { ArchOption, DraftAdr, Requirement } from "./state";
 
 export const mvp = (rs: Requirement[]) => rs.filter((r) => r.priority === "mvp");
@@ -106,8 +106,42 @@ const countBy = <T>(xs: T[], key: (x: T) => string) =>
     .map(([k, n]) => `${n} ${k}`)
     .join(", ");
 
+/** Words a reviewer has to interpret. Each hides the behaviour the criterion should name. */
+const VAGUE = /\b(robust(?:ly)?|secure(?:ly)?|properly|correctly|appropriate(?:ly)?|gracefully|seamless(?:ly)?|user-friendly|as needed|etc)\b/i;
+/** A scope with no edge, unless the criterion also says what it leaves out. */
+const BROAD = /\b(repo-wide|project-wide|codebase-wide|everywhere|across the (?:repo|codebase|project))\b/i;
+const EXCLUDES = /\b(except|excluding|excludes|skip|skips|other than|outside of|but not|only)\b/i;
+
+/**
+ * Problems a reviewer would otherwise fill in with its own idea, one line
+ * each: a task with no description or criteria, a vague or unbounded
+ * criterion, a risky task with nothing out of scope, and citations of ADRs or
+ * clauses the plan doesn't have.
+ */
+export function taskWarnings(tasks: PlannedTask[], adrs: DraftAdr[]): string[] {
+  const byId = new Map(adrs.map((a) => [a.id, a]));
+  return tasks.flatMap((t) => {
+    const out: string[] = [];
+    if (!t.description?.trim()) out.push(`${t.id}: no description`);
+    if (!t.acceptanceCriteria.length) out.push(`${t.id}: no acceptance criteria`);
+    for (const c of t.acceptanceCriteria) {
+      const vague = c.match(VAGUE)?.[1];
+      if (vague) out.push(`${t.id}: "${c}" uses "${vague}"; say what the code does instead`);
+      if (BROAD.test(c) && !EXCLUDES.test(c)) out.push(`${t.id}: "${c}" is broad; say what it excludes`);
+    }
+    if (t.risk !== "low" && !t.outOfScope?.length) out.push(`${t.id}: ${t.risk} risk with nothing out of scope`);
+    for (const id of t.adrRefs) if (!byId.has(id.match(/ADR-\d{4}/)?.[0] ?? id)) out.push(`${t.id}: cites ${id}, which the plan doesn't have`);
+    for (const ref of clauseRefs([...t.acceptanceCriteria, t.description ?? ""].join("\n"))) {
+      const adr = byId.get(ref.id);
+      if (adr && ref.clause > adr.clauses.length) out.push(`${t.id}: cites ${ref.id} clause ${ref.clause}, which doesn't exist`);
+    }
+    return out;
+  });
+}
+
 export function planSummary(chosen: ArchOption | undefined, adrs: DraftAdr[], tasks: PlannedTask[], gaps: string[]): string {
   const starters = tasks.filter((t) => t.dependsOn.length === 0);
+  const warnings = taskWarnings(tasks, adrs);
   return [
     `Architecture: ${chosen ? `${chosen.id}, ${chosen.pitch}` : "none"}`,
     "",
@@ -118,15 +152,35 @@ export function planSummary(chosen: ArchOption | undefined, adrs: DraftAdr[], ta
     `Can start first (${starters.length}):`,
     ...starters.map((t) => `  ${t.id} ${t.title}`),
     ...(gaps.length ? ["", `Still not covered by any task: ${gaps.join(", ")}`] : []),
+    ...(warnings.length
+      ? ["", `Tasks a reviewer would have to interpret (${warnings.length}; all in plan.md):`, ...warnings.slice(0, 6).map((w) => `  ${w}`)]
+      : []),
   ].join("\n");
 }
 
-export function planDetail(tasks: PlannedTask[]): string {
+export function planDetail(tasks: PlannedTask[], adrs: DraftAdr[] = []): string {
+  const warnings = taskWarnings(tasks, adrs);
+  const list = (xs: string[] | undefined) => (xs?.length ? xs.map((x) => `- ${x}`) : ["- (none)"]);
   return [
     "# Tasks",
     "",
     "| Task | Title | Risk | Size | Needs first | Requirements |",
     "|---|---|---|---|---|---|",
     ...tasks.map((t) => `| ${t.id} | ${t.title} | ${t.risk} | ${t.estimate ?? ""} | ${t.dependsOn.join(", ")} | ${t.requirementIds.join(", ")} |`),
+    ...(warnings.length ? ["", "## Warnings", "", ...warnings.map((w) => `- ${w}`)] : []),
+    ...tasks.flatMap((t) => [
+      "",
+      `## ${t.id}: ${t.title}`,
+      "",
+      t.description ?? "(no description)",
+      "",
+      `ADRs: ${t.adrRefs.join(", ") || "none"}`,
+      "",
+      "Acceptance criteria:",
+      ...list(t.acceptanceCriteria),
+      "",
+      "Out of scope:",
+      ...list(t.outOfScope),
+    ]),
   ].join("\n");
 }

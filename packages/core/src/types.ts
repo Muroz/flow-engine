@@ -12,10 +12,14 @@
 export type PlannedTask = {
   id: string; // "T-014"
   title: string;
+  /** Two to four sentences: what the task delivers, why, and anything it trusts or assumes. */
+  description?: string;
   requirementIds: string[]; // traceability back to the PRD
   adrRefs: string[]; // decisions this task must respect, e.g. ["ADR-0001"]
   dependsOn: string[]; // DAG edges between tasks
   acceptanceCriteria: string[]; // what reviewers/verifiers check against
+  /** What this task does not do, often because a later task does. Reviewers don't ask for it. */
+  outOfScope?: string[];
   risk: Risk;
   estimate?: "S" | "M" | "L";
 };

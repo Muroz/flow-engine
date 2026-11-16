@@ -9,14 +9,14 @@ Each generative node has one Markdown prompt here, so you can read, diff and tes
 | `_audience-developer.md` | `writingRules("developer")`, for the agent and the `docs` reviewer | none |
 | `review/_output.md` | Every review specialist, as `{{output_format}}` | none |
 | `review/_later_round.md` | Every review specialist in a later round, put in front of `_output.md` in `{{output_format}}`. It tells the reviewer what earlier rounds asked for, so it doesn't undo a fix. | `prior`, `delta` |
-| `review/spec.md` | `reviewer` (spec) | `task_title`, `acceptance_criteria`, `decisions`, `standards`, `diff`, `output_format` |
+| `review/spec.md` | `reviewer` (spec) | `task_scope`, `acceptance_criteria`, `decisions`, `standards`, `diff`, `output_format` |
 | `review/correctness.md` | `reviewer` (correctness) | `standards`, `diff`, `output_format` |
-| `review/security.md` | `reviewer` (security) | `standards`, `diff`, `output_format` |
+| `review/security.md` | `reviewer` (security) | `task_scope`, `decisions`, `standards`, `diff`, `output_format` |
 | `review/tests.md` | `reviewer` (tests) | `changed_files`, `acceptance_criteria`, `standards`, `diff`, `output_format` |
 | `review/architecture.md` | `reviewer` (architecture) | `decisions`, `conventions`, `standards`, `diff`, `output_format` |
 | `review/docs.md` | `reviewer` (docs) | `writing_rules`, `standards`, `diff`, `output_format` |
-| `review/verify.md` | `verify` | `reviewer`, `severity`, `finding`, `file_diff`, `file_text`, `decisions`, `standards`, `conventions`, `acceptance_criteria`, `prior` |
-| `delivery/plan.md` | `makePlan` | `task`, `acceptance_criteria`, `adrs`, `feedback` |
+| `review/verify.md` | `verify` | `reviewer`, `severity`, `finding`, `file_diff`, `file_text`, `decisions`, `standards`, `conventions`, `acceptance_criteria`, `out_of_scope`, `prior` |
+| `delivery/plan.md` | `makePlan` | `task`, `acceptance_criteria`, `out_of_scope`, `adrs`, `feedback` |
 | `delivery/walkthrough.md` | `explainWork` and `flows explain` | `writing_rules`, `task`, `acceptance_criteria`, `plan`, `review`, `files`, `diff` |
 | `planning/questions.md` | `askQuestions` | `brief` |
 | `planning/requirements.md` | `writeRequirements`, first pass | `brief` |
@@ -28,6 +28,8 @@ Each generative node has one Markdown prompt here, so you can read, diff and tes
 | `planning/breakdown.md` | `breakdown` | `requirements`, `adrs`, `previous`, `gaps` |
 
 Every prompt except `delivery/walkthrough.md` asks for a single JSON object, and the node parses it with `parseJsonReply`. If you change the JSON shape in a prompt, change the parsing in the node too. The walkthrough prompt asks for Markdown, and the merge gate shows its `## In short` and `## How it works` sections, so keep both headings.
+
+`templates/adr.md`, at the engine root, is the ADR template rather than a prompt. `renderAdr` fills it for planning, and the coding agent gets it with each slot explained. Its placeholders are `id`, `title`, `date`, `status`, `relations`, `context`, `clauses` and `consequences`.
 
 The Claude Code agent's prompt isn't here. `agentPrompt` in `packages/delivery/src/nodes/implement.ts` builds it from the task, because it is mostly data.
 

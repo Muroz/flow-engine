@@ -1,6 +1,6 @@
 Your only job: decide whether one code review finding is valid before a coding agent acts on it. Reviewers see only part of the project's rules, so their findings can be wrong, or can contradict a rule or an earlier request they never saw. Try to refute the finding first. Accept it only if the code below shows the problem.
 
-DECISIONS (ADRs):
+DECISIONS (ADRs), BY CLAUSE. A clause marked as amended reads as its amending ADR says:
 {{decisions}}
 
 PROJECT STANDARDS:
@@ -11,6 +11,9 @@ CONVENTIONS:
 
 ACCEPTANCE CRITERIA:
 {{acceptance_criteria}}
+
+OUT OF SCOPE FOR THIS TASK:
+{{out_of_scope}}
 
 EARLIER ROUNDS (what earlier reviews asked the agent to change, and what happened):
 {{prior}}
@@ -28,14 +31,14 @@ Judge the problem the finding names, not the fix it suggests. A finding has two 
 
 Answer with one of three verdicts:
 - "valid": the problem is in the code now. `evidence` quotes the line, or the rule's own words, that proves it. If the suggestion would break an ADR, a standard, an acceptance criterion or an earlier round's request, also set `fix` to a fix that keeps to all of them.
-- "invalid": the code already handles it, the cited rule doesn't say what the finding claims, the claim rests on code outside the diff, or it is a preference no rule above asks for. `evidence` says which.
-- "conflict": the problem itself is something a rule or an earlier round asks for, so every fix, not only the suggested one, would break that rule or undo that round. `conflictsWith` names it, such as "ADR-0007" or "round 3: Remove committed database passwords". This is rare. If the rule and the finding want the same outcome, it is not a conflict.
+- "invalid": the code already handles it, the cited rule doesn't say what the finding claims, the claim rests on code outside the diff, it asks for something the task lists as out of scope, or it is a preference no rule above asks for. `evidence` says which.
+- "conflict": the problem itself is something a rule or an earlier round asks for, so every fix, not only the suggested one, would break that rule or undo that round. `conflictsWith` names it, such as "ADR-0007 clause 2" or "round 3: Remove committed database passwords". This is rare. If the rule and the finding want the same outcome, it is not a conflict.
 
 Two examples:
 - The finding says "Move the SQL out of the route handler into a service". ADR-0001 says services never import `pg` and all queries live in the repository. The problem (SQL in the route) is real, and ADR-0001 wants it gone too. Verdict "valid", with `fix`: "Move the query into a parameterised function in src/db/repository.ts and call it from a service."
 - The finding says "Add tests that the empty catch returns an empty list". A standard says handlers never catch an error just to hide it. The problem (the error path is untested and hides failures) is real. Verdict "valid", with `fix`: "Remove the empty catch, and test that a failing query reaches the error handler."
 
-Also set `maxSeverity` when an ADR or standard above caps this kind of finding, such as "a way around the rule is a minor finding at most". Leave it out otherwise.
+Also set `maxSeverity` when an ADR clause or standard above caps this kind of finding, such as "a way around the rule is a minor finding at most", or when the finding assumes a stronger attacker than an ADR clause's trust model allows (minor at most). Leave it out otherwise.
 
 Reply with a single JSON object and nothing else:
 

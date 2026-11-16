@@ -67,11 +67,11 @@ Each specialist sees only its own view of the context. That keeps prompts short 
 
 | ID | Sees | Runs when |
 |---|---|---|
-| `spec` | Task title, acceptance criteria, diff | The run has a task with acceptance criteria. |
+| `spec` | Task description and out-of-scope list, acceptance criteria, the ADRs they cite, diff | The run has a task with acceptance criteria. |
 | `correctness` | Diff | Always. |
-| `security` | Diff | Always. |
+| `security` | Task description and out-of-scope list, the task's ADRs by clause, diff | Always. |
 | `tests` | Changed files, acceptance criteria, diff | Always. |
-| `architecture` | ADR decisions, conventions, diff | The project has ADRs, conventions or standards listed for it. |
+| `architecture` | The task's ADRs by clause, conventions, diff | The project has ADRs, conventions or standards listed for it. |
 | `docs` | Writing rules for developers, doc files, and the code hunks that add comments | The diff changes a Markdown or text file, or adds a comment line. |
 
 To add a specialist:

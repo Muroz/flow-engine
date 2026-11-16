@@ -25,14 +25,14 @@ Get started by pointing `flows review` at a branch you already have; [Use it on 
 
 ## Lexicon
 
-- **ADR:** architecture decision record. One file under `docs/adr/` that states a technical decision, its reasons and its costs. Delivery and review check code against the ADRs.
+- **ADR:** architecture decision record. One file under `docs/adr/`, in Nygard's structure, that states a technical decision as numbered clauses, with its reasons and its costs. A later ADR can amend a single clause, such as `ADR-0001 clause 2`. Delivery and review check code against the ADRs.
 - **Finding:** a problem a reviewer reports, with a location, a severity and a rationale. Verification can rule a finding out. For the rest, the judge names the kind of problem, and the project's triage table sets the severity before the verdict.
 - **Gate:** a node that pauses the graph for a human decision, such as `approve`, `revise` or `merge`. It fits on one screen and links to the full text.
 - **Judge:** a model limited to typed answers (a probability, one option from a fixed set or a level on a scale) so code can branch on the result. [Jev](https://console.typesafe.ai) serves as judge when you have a TypeSafe key and the project doesn't restrict its providers; otherwise an ordinary LLM does.
 - **Node:** one step in a flow's graph: either plain code or a single model call.
 - **PRD:** product requirements document, `docs/prd.md`.
 - **Run:** one execution of a flow. Its log, report and other output go to `runs/<project>/<run id>/` in this repo.
-- **Task:** an entry in `plan/tasks.yaml` with acceptance criteria, dependencies and a risk level.
+- **Task:** an entry in `plan/tasks.yaml` with a description, acceptance criteria, what is out of scope, dependencies and a risk level.
 - **Verdict:** the result of a review: `pass`, `fix` (return the change to the coding agent) or `escalate` (hand the decision to you).
 - **Worktree:** the git worktree delivery creates for each task on branch `flows/<task>`, so the agent never touches your checkout.
 
@@ -111,7 +111,7 @@ To try delivery, set `delivery.agent: claude-code` in a low-risk project's `.flo
 | `flows deliver --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Takes one task from plan to merge gate. `delivery.agent` in `.flows.yaml` picks who writes the code. |
 | `flows plan --repo <dir> --brief <file> [--write]` | Turns a brief into a PRD, ADRs and tasks. Writes a proposal under `runs/` unless you pass `--write`. |
 | `flows tasks --repo <dir> [--done T-001,T-002]` | Prints the task list and marks which tasks are ready to start. Needs no keys. |
-| `flows adrs --repo <dir>` | Lists the ADRs with their status and relations, and exits with code 1 if a link is broken. Needs no keys. |
+| `flows adrs --repo <dir>` | Lists the ADRs with their status, date, clause count and relations. Exits with code 1 if an ADR departs from the template or a link is broken. Needs no keys. |
 | `flows runs [--repo <dir>]` | Lists paused runs. |
 | `flows resume <run id>` | Picks a paused run up at the gate where you paused it. |
 | `flows explain --repo <dir> --task <id> [--base main] [--diff-file <f>]` | Writes a plain-language walkthrough of a task's changes. Delivery writes one before every merge gate; use this for work you want explained again. |

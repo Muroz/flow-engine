@@ -1,5 +1,6 @@
 import {
-  adrHeading,
+  adrBrief,
+  adrTemplateGuide,
   loadAdrs,
   loadDiff,
   logEntry,
@@ -9,6 +10,7 @@ import {
   type FlowDeps,
   type PriorFinding,
 } from "@flows/core";
+import { join, relative } from "node:path";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { agentModel, BASE_TOOLS, ensureWorktree, runClaudeCode, snapshotTree, worktreeDiff } from "../agents/claude-code";
 import { replayDiff } from "../agents/diff-file";
@@ -129,16 +131,27 @@ const sameTitle = (a: string, b: string) => {
   return norm(a) === norm(b) || norm(a).startsWith(norm(b)) || norm(b).startsWith(norm(a));
 };
 
+/** Where the agent writes a new ADR, relative to its worktree. */
+const adrDir = (deps: FlowDeps) => join(relative(deps.config.repoDir, deps.config.artifactsDir), "docs", "adr");
+
 /** What the coding agent is told for one attempt. */
 export function agentPrompt(s: DeliveryState, deps: FlowDeps): string {
   const adrs = loadAdrs(deps.config, s.task.adrRefs);
   const standards = deps.config.standards.map((ref) => ref.path);
   return [
-    `Implement ${s.task.id}: ${s.task.title}`,
+    `Implement ${s.task.id}: ${s.task.title}${s.task.description ? `\n\n${s.task.description}` : ""}`,
     `Acceptance criteria:\n${bullets(s.task.acceptanceCriteria)}`,
+    s.task.outOfScope?.length ? `Out of scope. Don't build these, even if a note asks for them; decline the note instead:\n${bullets(s.task.outOfScope)}` : "",
     `Plan:\n${bullets(s.plan?.steps ?? [])}`,
     standards.length ? `Read these project standards before you start, and follow them. Reviewers check against them:\n${bullets(standards)}` : "",
-    adrs.length ? `Decisions to respect:\n${adrs.map((a) => `${adrHeading(a)}\n${a.decision}`).join("\n\n")}` : "",
+    adrs.length
+      ? [
+          `Decisions to respect, by clause:\n\n${adrs.map(adrBrief).join("\n\n")}`,
+          `Never edit an existing ADR's Context, Decision or Consequences. If the task can't be built within a clause, write a new ADR in ${adrDir(deps)}/ that amends that clause, and add the matching "Amended by" line to the Relations of the ADR it amends. ` +
+            "Say so in your reply; a person approves it at the merge gate. Use this template:\n\n" +
+            adrTemplateGuide(),
+        ].join("\n\n")
+      : "",
     deps.config.conventions.length ? `Conventions:\n${bullets(deps.config.conventions)}` : "",
     s.fixNotes.length
       ? [

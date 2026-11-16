@@ -24,6 +24,7 @@ import {
   allAdrs,
   categoryWarnings,
   checkAdrs,
+  describeRelation,
   createDeps,
   ENGINE_ROOT,
   findTask,
@@ -105,11 +106,12 @@ const abs = (p: string | undefined) => (p === undefined ? undefined : resolve(he
 const config = loadConfig(abs(args.repo)!, abs(args.artifacts));
 
 if (command === "adrs") {
-  // No models needed: list the ADRs and check that every link is recorded on both sides.
+  // No models needed: list the ADRs, check each against the template and
+  // check that every link is recorded on both sides with the same clauses.
   const adrs = allAdrs(config);
   for (const a of adrs) {
-    const links = a.relations.map((r) => `${r.kind.toLowerCase()} ${r.id}`).join(", ");
-    console.log(`${a.id} [${a.status}] ${a.title}${links ? `  · ${links}` : ""}`);
+    const links = a.relations.map((r) => describeRelation(r).replace(/^\w/, (c) => c.toLowerCase())).join(", ");
+    console.log(`${a.id} [${a.status}${a.date ? `, ${a.date}` : ""}] ${a.title} (${a.clauses.length} clause${a.clauses.length === 1 ? "" : "s"})${links ? `  · ${links}` : ""}`);
   }
   const problems = checkAdrs(adrs);
   if (problems.length) {
@@ -117,7 +119,7 @@ if (command === "adrs") {
     for (const p of problems) console.log(`  ✗ ${p}`);
     process.exit(1);
   }
-  console.log(`\n${adrs.length} ADRs, links consistent.`);
+  console.log(`\n${adrs.length} ADRs, all in the template's format, links consistent.`);
   process.exit(0);
 }
 

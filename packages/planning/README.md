@@ -9,9 +9,9 @@ Every node runs, online and offline. The prompts in `prompts/planning/` are firs
 1. **Discovery.** A judge checks whether the brief names the users, the core flows, the constraints and what success looks like. If it doesn't, a model writes questions, and you answer them. This repeats at most twice.
 2. **Requirements and scope.** A model turns the brief into numbered, testable requirements, each marked MVP (the first release) or later. You approve the scope, or tell it what to change.
 3. **Architecture.** A model proposes three architectures in parallel, each from a different angle: the simplest option, one built to scale and one that buys instead of building. Another model compares them and recommends one. You pick one, adjust one or ask for three new ones.
-4. **ADRs.** A model writes one ADR per decision in the chosen option. Delivery and review check code against them.
-5. **Tasks.** A model splits the MVP into tasks, each with dependencies, acceptance criteria, a risk and a size. A judge checks that every MVP requirement is covered, and the breakdown runs once more if it isn't.
-6. **Plan gate.** You see a one-screen summary of the plan. On `approve`, the flow writes the PRD, the ADRs and `plan/tasks.yaml`.
+4. **ADRs.** A model writes one ADR per decision in the chosen option, with the decision split into numbered clauses. Delivery and review check code against them, clause by clause.
+5. **Tasks.** A model splits the MVP into tasks. Each has a description, dependencies, acceptance criteria, a list of what is out of scope, a risk and a size. A judge checks that every MVP requirement is covered, and the breakdown runs once more if it isn't.
+6. **Plan gate.** You see a one-screen summary of the plan, including any task a reviewer would have to interpret. On `approve`, the flow writes the PRD, the ADRs and `plan/tasks.yaml`.
 
 The four gates are the discovery questions, the scope, the architecture and the final plan.
 
@@ -108,10 +108,20 @@ The terminal also offers `back` and `pause` at every gate. [The CLI README](../c
 
 `flows plan` writes a proposal to `runs/<project>/<run id>/proposed/`. Read it, then copy what you want into the project, or run again with `--write`.
 
-New ADRs follow the [ADR format](../core/README.md#adr-format) with the status `Proposed`. `writeAdrs` asks the model which ADRs in the set relate to each other, and `emit` records each `Related to` link on both ADRs. Accept or change them before you deliver the tasks that link to them.
+New ADRs follow the [ADR format](../core/README.md#adr-format), dated the day `emit` writes them, with the status `Proposed`. `writeAdrs` asks the model which ADRs in the set relate to each other, and `emit` records each `Related to` link on both ADRs. Accept or change them before you deliver the tasks that link to them.
+
+## Writing tasks that build in one round
+
+The coding agent builds a task from its text alone, and six reviewers check the result against it. Whatever a task leaves open, some reviewer fills in with its own idea, and delivery loops until they agree. `breakdown` asks for these fields to close those gaps:
+
+- **`description`:** what the task delivers, why, and what it trusts or assumes, such as "the repos it scans are the user's own".
+- **`acceptanceCriteria`:** one observable behaviour each. A broad scope names what it excludes, and a criterion that rests on one ADR clause cites it.
+- **`outOfScope`:** what a reviewer might expect but this task doesn't do, such as work a later task does. The agent declines notes that ask for it, and the verifier rules such findings invalid.
+
+`taskWarnings` in `src/summaries.ts` checks the breakdown without a model. It flags a task with no description or no criteria, a criterion with a word a reviewer must interpret (robust, secure, properly, gracefully and similar), a broad criterion such as "repo-wide" that names no exclusion, a medium or high risk task with nothing out of scope, and a citation of an ADR or clause the plan doesn't have. The plan gate shows the first six, and `plan.md` lists them all, with every task in full.
 
 > **Warning:** `--write` writes straight into the artifacts folder and replaces `docs/prd.md`, `plan/tasks.yaml` and any ADR files with the same names.
 
 ## Tests
 
-`test/routing.test.ts` covers the discovery and coverage loops. `test/summaries.test.ts` covers the gate summaries, the scope diff and the `adjust` notes. Run it with `pnpm test` from the engine root.
+`test/routing.test.ts` covers the discovery and coverage loops. `test/summaries.test.ts` covers the gate summaries, the scope diff, the `adjust` notes, ADR clauses and `taskWarnings`. Run it with `pnpm test` from the engine root.

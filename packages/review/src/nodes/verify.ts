@@ -33,6 +33,7 @@ export const verify =
       standards: ctx.standards.length ? ctx.standards.map((s) => `### ${s.path}\n${s.text.trim()}`).join("\n\n") : "(none)",
       conventions: ctx.conventions.length ? ctx.conventions.map((c) => `- ${c}`).join("\n") : "(none)",
       acceptance_criteria: ctx.task?.acceptanceCriteria.length ? ctx.task.acceptanceCriteria.map((c) => `- ${c}`).join("\n") : "(none)",
+      out_of_scope: ctx.task?.outOfScope?.length ? ctx.task.outOfScope.map((c) => `- ${c}`).join("\n") : "(none listed)",
       prior: priorText(ctx.prior),
     };
     const template = loadPrompt("review/verify");

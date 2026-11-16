@@ -11,7 +11,7 @@ Core holds everything the flows share. It has no LangGraph code, so every flow c
 | `models.ts` | `OpenRouterClient`, `ClaudeCodeClient`, `RoutingModelClient`, `MockModelClient` and `parseJsonReply`. |
 | `judge.ts` | The judge interface and its three engines: `JevJudge`, `LlmJudge` and `MockJudge`. |
 | `artifacts.ts` | Reads tasks, standards, the PRD and diffs, and writes run output under `runs/`. |
-| `adrs.ts` | Reads ADRs with their status and relations, resolves the ADRs a task needs, and checks that links are recorded on both sides. See [ADR format](#adr-format). |
+| `adrs.ts` | Reads ADRs with their status, relations and numbered clauses, resolves the ADRs a task needs, writes new ADRs from `templates/adr.md`, and checks each file against the template and each link on both sides. See [ADR format](#adr-format). |
 | `prompts.ts` | `loadPrompt` reads `prompts/<name>.md`, and `render` fills in `{{placeholders}}`. `writingRules(audience)` returns the shared writing rules for the project owner or for developers. Walkthroughs, the Claude Code agent's prompt and the `docs` reviewer use it. |
 | `gates.ts` | `GateRequest` and `GateDecision`, the shapes a gate sends and gets back. |
 | `log.ts` | `logEntry` and `totalCost`. |
@@ -53,12 +53,45 @@ To add another backend, implement `ModelClient`, give it a prefix and add a rout
 
 ## ADR format
 
-`adrs.ts` reads `docs/adr/NNNN-*.md` in the artifacts folder and skips other files, such as a README. Each ADR has these sections: Status, Relations, Context, Decision and Consequences.
+`adrs.ts` reads `docs/adr/NNNN-*.md` in the artifacts folder and skips other files, such as a README. Every ADR follows Nygard's structure, filled from `templates/adr.md`:
 
-- **Status:** `Proposed`, `Accepted on <date>`, `Superseded by ADR-NNNN on <date>` or `Deprecated on <date>`. The parser reads the first word.
-- **Relations:** one line per link, such as `- Amends [ADR-0001](0001-name.md): what changes.` The kinds are `Supersedes`, `Superseded by`, `Amends`, `Amended by` and `Related to`. Each relation is recorded on both ADRs.
+```markdown
+# ADR-0006: Scanned repos are untrusted
 
-`loadAdrs(config, ids)` follows the links when it gathers a task's ADRs. It swaps a superseded ADR for its replacement, adds any ADRs that amend one it returns, and skips deprecated ones. Without `ids`, it returns every ADR in force. `checkAdrs` lists one-sided links, links to missing ADRs and statuses that disagree with their relations. `flows adrs` prints both.
+Date: 2026-11-15
+
+## Status
+Accepted
+
+## Relations
+- Amends [ADR-0001](0001-read-git-state.md) clause 2: allows reading config files to find filter drivers.
+
+## Context
+Why a decision is needed.
+
+## Decision
+1. One rule a reviewer can check.
+2. The next rule.
+
+## Consequences
+What becomes easier or harder.
+```
+
+- **Title:** `# ADR-NNNN: <the decision>`. The number matches the file name.
+- **Date:** the day the ADR was written, as `YYYY-MM-DD`.
+- **Status:** `Proposed`, `Accepted`, `Superseded` or `Deprecated`, optionally followed by more words, such as `Accepted on 2026-11-20`. The parser reads the first word.
+- **Relations:** `None.`, or one line per link. The kinds are `Supersedes`, `Superseded by`, `Amends`, `Amended by` and `Related to`. Each relation is recorded on both ADRs.
+- **Decision:** a numbered list of clauses, each one rule. A clause can wrap onto lines indented by two spaces or more. Anything else in the section, such as a `###` subsection, is a format problem.
+
+Tasks, findings and other ADRs cite a clause as `ADR-0001 clause 2`, or `ADR-0001 clauses 2 and 3`. An accepted ADR's text never changes. To change part of a decision, write a new ADR whose Relations say `Amends [ADR-0001](...) clause 2`, and add `Amended by [ADR-0006](...) clause 2` to ADR-0001. Both lines carry the amended ADR's clause numbers. To replace a whole decision, use `Supersedes` and set the old ADR's status to `Superseded`.
+
+`loadAdrs(config, ids)` follows the links when it gathers a task's ADRs. It swaps a superseded ADR for its replacement, adds any ADRs that amend one it returns, and skips deprecated ones. An id can name a clause, such as `ADR-0001 clause 2`; the whole ADR comes back. Without `ids`, it returns every ADR in force.
+
+`adrBrief` renders an ADR for a model: the heading, then each clause by number, with a note on each clause another ADR amends. Every flow uses it, so the planner, the coding agent, the reviewers and the verifier all see the same numbering.
+
+`renderAdr` writes a new ADR from the template, and `adrTemplateGuide` fills the template with instructions for a coding agent that has to write one by hand.
+
+`checkAdrs` lists format problems, one-sided links, links whose clauses differ between the two sides, amendments that name no clause or a clause that doesn't exist, clause citations that point at nothing, and statuses that disagree with their relations. `flows adrs` prints the ADRs and those problems.
 
 ## Mocks
 
@@ -66,4 +99,4 @@ To add another backend, implement `ModelClient`, give it a prefix and add a rout
 
 ## Tests
 
-`test/adrs.test.ts` covers relations, how a task's ADRs follow supersessions and amendments, and `checkAdrs`. `test/deps.test.ts` covers how the judge engine and backends are picked, `--claude-code` and the Anthropic guard. `test/judge.test.ts` covers how Jev scores map to levels. `test/models.test.ts` covers `ClaudeCodeClient`, `RoutingModelClient` and the OpenRouter retries. `test/standards.test.ts` covers project standards and `writingRules`. Run them with `pnpm test` from the engine root.
+`test/adrs.test.ts` covers relations and clause numbers, the template, format problems, how a task's ADRs follow supersessions and amendments, and `checkAdrs`. `test/deps.test.ts` covers how the judge engine and backends are picked, `--claude-code` and the Anthropic guard. `test/judge.test.ts` covers how Jev scores map to levels. `test/models.test.ts` covers `ClaudeCodeClient`, `RoutingModelClient` and the OpenRouter retries. `test/standards.test.ts` covers project standards and `writingRules`. Run them with `pnpm test` from the engine root.

@@ -99,7 +99,9 @@ export const triage =
         const judgeState = {
           finding: { title: f.title, rationale: f.rationale, file: f.file, line: f.line },
           code: findingDiff(state.input.diff, f.file, f.line),
-          task: state.input.task ? { title: state.input.task.title, acceptanceCriteria: state.input.task.acceptanceCriteria } : undefined,
+          task: state.input.task
+            ? { title: state.input.task.title, acceptanceCriteria: state.input.task.acceptanceCriteria, outOfScope: state.input.task.outOfScope ?? [] }
+            : undefined,
         };
         const a = v.checked
           ? { ...(await deps.judge.ask(judgeState, { category })), real: { p: 1 } }

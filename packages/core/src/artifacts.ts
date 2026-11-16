@@ -27,10 +27,12 @@ export function loadTasks(config: ProjectConfig): PlannedTask[] {
   return list.map((t) => ({
     id: String(t.id),
     title: String(t.title ?? ""),
+    ...(t.description ? { description: String(t.description).trim() } : {}),
     requirementIds: t.requirementIds ?? [],
     adrRefs: t.adrRefs ?? [],
     dependsOn: t.dependsOn ?? [],
     acceptanceCriteria: t.acceptanceCriteria ?? [],
+    ...(Array.isArray(t.outOfScope) && t.outOfScope.length ? { outOfScope: t.outOfScope.map(String) } : {}),
     risk: t.risk ?? "medium",
     estimate: t.estimate,
   }));

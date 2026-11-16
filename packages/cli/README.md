@@ -48,7 +48,7 @@ The CLI saves every planning and delivery run to `runs/checkpoints.db`, and writ
 | Code | Meaning |
 |---|---|
 | 0 | The command finished. For `review`, the verdict was `pass`. `deliver` and `plan` exit 0 whatever you chose at the gates, including `reject`, `abort` and `discard`: the outcome is in the last line and in `state.json`. |
-| 1 | Bad arguments, a missing task, an error, or, for `adrs`, a broken link. |
+| 1 | Bad arguments, a missing task, an error, or, for `adrs`, an ADR that departs from the template or a broken link. |
 | 2 | `review` only: the verdict was `fix` or `escalate`. |
 
 ## Tests

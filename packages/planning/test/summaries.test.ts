@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { mergeOptions } from "../src/graph";
 import { asOption, asRequirement } from "../src/nodes";
 import type { Requirement } from "../src/state";
-import { archSummary, describeDiff, diffRequirements, parseAdjust, scopeSummary } from "../src/summaries";
+import type { PlannedTask } from "@flows/core";
+import { archSummary, describeDiff, diffRequirements, parseAdjust, scopeSummary, taskWarnings } from "../src/summaries";
 
 const r = (id: string, over: Partial<Requirement> = {}): Requirement => ({
   id,
@@ -61,8 +62,44 @@ test("missing fields get defaults, so gates never print undefined", () => {
 
 test("new ADRs record each Related to link on both sides", async () => {
   const { renderAdr } = await import("../src/nodes");
-  const a = { id: "ADR-0001", title: "One", context: "c", decision: "d", consequences: "q", related: ["ADR-0002"] };
-  const b = { id: "ADR-0002", title: "Two", context: "c", decision: "d", consequences: "q" };
-  assert.match(renderAdr(a, [a, b]), /## Status\nProposed\n\n## Relations\n- Related to \[ADR-0002\]\(0002-two\.md\)/);
-  assert.match(renderAdr(b, [a, b]), /- Related to \[ADR-0001\]\(0001-one\.md\)/);
+  const a = { id: "ADR-0001", title: "One", context: "c", clauses: ["d"], consequences: "q", related: ["ADR-0002"] };
+  const b = { id: "ADR-0002", title: "Two", context: "c", clauses: ["d", "e"], consequences: "q" };
+  assert.match(renderAdr(a, [a, b], "2026-11-15"), /^# ADR-0001: One\n\nDate: 2026-11-15\n\n## Status\nProposed\n\n## Relations\n- Related to \[ADR-0002\]\(0002-two\.md\)/);
+  assert.match(renderAdr(b, [a, b], "2026-11-15"), /- Related to \[ADR-0001\]\(0001-one\.md\)/);
+  assert.match(renderAdr(b, [a, b], "2026-11-15"), /## Decision\n1\. d\n2\. e\n/);
+});
+
+test("asClauses takes a list or numbered prose and drops the model's own numbers", async () => {
+  const { asClauses } = await import("../src/nodes");
+  assert.deepEqual(asClauses(["1. One rule.", "Two."]), ["One rule.", "Two."]);
+  assert.deepEqual(asClauses("1) First.\n2) Second."), ["First.", "Second."]);
+  assert.deepEqual(asClauses(undefined), []);
+});
+
+test("taskWarnings flags tasks a reviewer would have to interpret", () => {
+  const task = (over: Partial<PlannedTask>): PlannedTask => ({
+    id: "T-001", title: "t", description: "d", requirementIds: [], adrRefs: ["ADR-0001"], dependsOn: [],
+    acceptanceCriteria: ["Returns 404 for a missing order"], risk: "low", ...over,
+  });
+  const adrs = [{ id: "ADR-0001", title: "a", context: "", clauses: ["x", "y"], consequences: "" }];
+  assert.deepEqual(taskWarnings([task({})], adrs), []);
+  assert.deepEqual(
+    taskWarnings(
+      [
+        task({ id: "T-002", description: undefined, acceptanceCriteria: [] }),
+        task({ id: "T-003", risk: "high", acceptanceCriteria: ["Errors are handled gracefully", "A repo-wide check finds every import"] }),
+        task({ id: "T-004", adrRefs: ["ADR-0009"], acceptanceCriteria: ["Follows ADR-0001 clause 5", "A repo-wide check skips node_modules"] }),
+      ],
+      adrs,
+    ),
+    [
+      "T-002: no description",
+      "T-002: no acceptance criteria",
+      'T-003: "Errors are handled gracefully" uses "gracefully"; say what the code does instead',
+      'T-003: "A repo-wide check finds every import" is broad; say what it excludes',
+      "T-003: high risk with nothing out of scope",
+      "T-004: cites ADR-0009, which the plan doesn't have",
+      "T-004: cites ADR-0001 clause 5, which doesn't exist",
+    ],
+  );
 });

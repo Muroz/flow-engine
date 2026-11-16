@@ -56,13 +56,14 @@ export function registerPlanningMocks(deps: FlowDeps): void {
         case "planning.adrs":
           return JSON.stringify({
             adrs: [
-              { title: "Returns live in the existing API as a module", context: "Small client, one team, existing Node/Postgres API.", decision: "Add a returns module to the existing API with its own tables; no new service.", consequences: "Simple deploys; revisit if returns volume grows 10x." },
-              { title: "Carrier access goes through a single adapter", context: "Labels come from an external carrier API.", decision: "All carrier calls go through src/carriers/adapter.ts so the carrier can be swapped.", consequences: "One extra layer; tests stub the adapter." },
+              { title: "Returns live in the existing API as a module", context: "Small client, one team, existing Node/Postgres API.", clauses: ["Returns live in a module of the existing API, with its own tables.", "No new service or deployable is added for returns."], consequences: "Simple deploys; revisit if returns volume grows 10x." },
+              { title: "Carrier access goes through a single adapter", context: "Labels come from an external carrier API.", clauses: ["All carrier calls go through src/carriers/adapter.ts.", "No other module imports a carrier SDK."], consequences: "One extra layer; tests stub the adapter." },
             ],
           });
         case "planning.breakdown": {
           const t = (id: string, title: string, reqs: string[], deps: string[], ac: string[], risk = "low") => ({
-            id, title, requirementIds: reqs, adrRefs: ["ADR-0001"], dependsOn: deps, acceptanceCriteria: ac, risk, estimate: "M",
+            id, title, description: `${title}, as the PRD's ${reqs.join(", ")} describe.`, requirementIds: reqs, adrRefs: ["ADR-0001"], dependsOn: deps,
+            acceptanceCriteria: ac, outOfScope: risk === "low" ? [] : ["Anything a later task in the list builds"], risk, estimate: "M",
           });
           const tasks = [
             t("T-001", "Returns schema and eligibility rules", ["R-1"], [], ["Orders outside the window are ineligible"], "medium"),

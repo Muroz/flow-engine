@@ -30,7 +30,8 @@ export type DraftAdr = {
   id: string;
   title: string;
   context: string;
-  decision: string;
+  /** The Decision as numbered clauses, each one rule a reviewer can check. */
+  clauses: string[];
   consequences: string;
   /** Other ADRs in the same set to read with this one. */
   related?: string[];
